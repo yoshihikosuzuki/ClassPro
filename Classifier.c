@@ -10,6 +10,10 @@
 #include "libfastk.h"
 #include "DB.h"
 
+#undef WRITE_ASCII_CLASS
+#undef DEBUG_ITER
+#undef DEBUG_PROB
+
 #define MIN(x,y) (x < y ? x : y)
 #define MAX(x,y) (x > y ? x : y)
 
@@ -17,7 +21,7 @@
 #define MAX_NITER 10
 #define CTX_LEN 1000
 
-static char *Usage = "<source_root> <diplo_depth>";
+static char *Usage = "<source_root> <diplo_depth<int>>";
 
 char stoc[4] = {'E', 'R', 'H', 'D'};
 
@@ -237,7 +241,9 @@ int update_state(int i, uint16* profile, int* chpt, char* asgn, int N, int* dept
       logp = calc_logp_h(i, profile, chpt, asgn, N, depths);
     else
       logp = calc_logp_d(i, profile, chpt, asgn, N, depths);
-    //printf("i=%d, s=%d, logp=%lf\n",i,s,logp);
+#ifdef DEBUG_PROB
+    printf("i=%d, s=%d, logp=%lf\n",i,s,logp);
+#endif
     if (logp > logpmax) {
       smax = s;
       logpmax = logp;
@@ -248,7 +254,9 @@ int update_state(int i, uint16* profile, int* chpt, char* asgn, int N, int* dept
     exit(1);
   }
   if (smax != asgn[i]) {
-    //printf("state updated @ %d: %d -> %d\n",i,asgn[i],smax);
+#ifdef DEBUG_ITER
+    printf("state updated @ %d: %d -> %d\n",i,asgn[i],smax);
+#endif
     asgn[i] = smax;
     return 1;
   } else {
@@ -385,7 +393,7 @@ int main(int argc, char *argv[])
     /*rdx = 0;
     fwrite(&rdx,sizeof(int64),1,rafile);*/
 
-    plen    = 20000;   // TODO: change to max read length of the DB?
+    plen    = 20000;
     profile = Malloc(plen*sizeof(uint16),"Profile array");
     chpt    = Malloc(plen*sizeof(int),"Change point array");
     asgn    = Malloc(plen*sizeof(char),"Assignment array");
@@ -399,10 +407,10 @@ int main(int argc, char *argv[])
             asgn    = Realloc(asgn,plen*sizeof(char),"Assignment array");
             Fetch_Profile(P,(int64) id-1,plen,profile);
           }
-        
-        //printf("Read %d:\n",id);
-        /*for (int i = 0; i < tlen; i++)
-          printf(" %5d: %5d\n",i,profile[i]);*/
+
+#ifdef DEBUG_ITER
+        printf("Read %d:\n",id);
+#endif
         
         for (int i = 0; i < km1; i++)
           track[i] = 0;
@@ -426,38 +434,54 @@ int main(int argc, char *argv[])
                 }
             }
         }
-        /*for (int i = 0; i < N; i++)
-          printf("intvl %d-%d: %d\n",chpt[i],chpt[i+1]-1,asgn[i]);*/
+#ifdef DEBUG_ITER
+        for (int i = 0; i < N; i++)
+          printf("intvl %d-%d: %d\n",chpt[i],chpt[i+1]-1,asgn[i]);
+#endif
 
         // iteratively refine assignments
         int counter;
         for (counter = 0; counter < MAX_NITER; counter++) {
-          //printf(".");
+#ifdef DEBUG_ITER
+          printf(".");
+#endif
           int changed = 0;
           for (int i = 0; i < N; i++)
             if (update_state(i, profile, chpt, asgn, N, depths))
               changed = 1;
           if (!changed) break;
-          //printf(".");
+#ifdef DEBUG_ITER
+          printf(".");
+#endif
           changed = 0;
           for (int i = N - 1; i >= 0; i--)
             if (update_state(i, profile, chpt, asgn, N, depths))
               changed = 1;
           if (!changed) break;
         }
-        //if (counter == MAX_NITER) printf("Not converged");
-        //printf("\n");
-
-        printf("%d\t",id);
-        for (int i = 0; i < N; i++)
-          for (int j = chpt[i]; j < chpt[i + 1]; j++)
-            printf("%c",stoc[(unsigned char)asgn[i]]);
+#ifdef DEBUG_ITER
+        if (counter == MAX_NITER) printf("Not converged");
         printf("\n");
-        
+#endif
+
         // map to track
-        for (int i = 0; i < N; i++)
-          for (int j = chpt[i]; j < chpt[i + 1]; j++)
+        for (int i = 0; i < N; i++) {
+          for (int j = chpt[i]; j < chpt[i + 1]; j++) {
             crack[j] = asgn[i];
+          }
+        }
+
+        // change assignments of high-copy R into E
+        /*for (int i = 0; i < tlen; i++)
+          if (crack[i] == 1 && profile[i] > depths[1])
+            crack[i] = 0;*/
+
+#ifdef WRITE_ASCII_CLASS
+        printf("%d\t",id);
+        for (int i = 0; i < tlen; i++)
+          printf("%c",stoc[(unsigned char)crack[i]]);
+        printf("\n");
+#endif
 
         int l = tlen + km1;
         Compress_Read(l,track);
