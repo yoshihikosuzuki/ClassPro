@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
     plen    = 20000;
     profile = Malloc(plen*sizeof(uint16),"Profile array");
 
-    printf("READ_ID\tREAD_LEN\tN_ERROR_MER\n");
+    printf("RID\tRLEN\tN_EMER\tP_EMER\n");
     for (id = 1; id <= P->nreads; id++)
       { tlen = Fetch_Profile(P,id-1,plen,profile);
         if (tlen > plen)
@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
         nemer = 0;
         for (int i = 0; i < tlen; i++)
           if (profile[i] <= E_THRES) nemer++;
-        printf("%lld\t%d\t%d\n", id, tlen, nemer);
+        printf("%lld\t%d\t%d\t%.3lf\n", id, tlen, nemer, (double)nemer/tlen);
       }
     free(profile);
   }
