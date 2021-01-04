@@ -10,7 +10,7 @@
 #include "libfastk.h"
 #include "DB.h"
 
-#undef WRITE_ASCII_CLASS
+#define WRITE_ASCII_CLASS
 #undef DEBUG_ITER
 #undef DEBUG_PROB
 
