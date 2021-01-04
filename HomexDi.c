@@ -245,7 +245,7 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
         k = (khalf>>2);
         suffix[k] = (suffix[k] & suffs[khalf&0x3]) | (((khalf&0x3) == 1 ? (abyte[hsym]>>2) : abyte[hsym]) & ~suffs[khalf&0x3]);
         for (k++; k < kbyte; k++)
-          suffix[k] = ((khalf&0x3) == 1 ? (abyte[hsym]>>2) : abyte[hsym]);
+          suffix[k] = ((khalf&0x3) == 1 ? ((abyte[hsym]<<2) | ((abyte[hsym]>>2)&0x3)) : abyte[hsym]);
 #ifdef DEBUG_PARTITION
         printf("      ");
         print_seq(suffix,kmer);
