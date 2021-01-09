@@ -14,8 +14,8 @@
 #include <dirent.h>
 #include <math.h>
 
-#define   DEBUG_PARTITION
-#undef    DEBUG_QUEUE
+#define    DEBUG_PARTITION
+#define    DEBUG_QUEUE
 #undef    DEBUG_DATA_POINT
 
 #include "libfastk.h"
@@ -56,7 +56,7 @@ static void setup_fmer_table()
        }
 }
 
-#if defined(DEBUG_PARTITION) || defined(DEBUG_QUEUE)
+//#if defined(DEBUG_PARTITION) || defined(DEBUG_QUEUE)
 
 static void print_seq(uint8 *seq, int len)
 { int i, b, k;
@@ -73,7 +73,7 @@ static void print_seq(uint8 *seq, int len)
     }
 }
 
-#endif
+//#endif
 
 static inline void mycpy(uint8 *a, uint8 *b, int n)
 { while (n--)
@@ -266,23 +266,23 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
           mycpy(cptr,iptr,tbyte);
           x -= kbase;
           if (0 <= x && x <= 3)
-            { if (fend[x] < 0)
+            { //print_seq(iptr,kmer);
+              //printf(" x=%d, kbase=%d\n",x,kbase);
+              if (fend[x] < 0)
                 fbeg[x] = cptr - cache;
               fend[x] = cptr - cache;
             }
           cptr += tbyte;
         }
 
+#ifdef DEBUG_PARTITION
       for (i = 0; i <= 3; i++) {
-        //printf("i=%d: fbeg=%lld, fend=%lld\n",i,fbeg[i],fend[i]);
         printf("i=%d: ",i);
         print_seq(cache+fbeg[i],kmer);
         printf(", ");
         print_seq(cache+fend[i],kmer);
         printf("\n");
       }
-
-#ifdef DEBUG_PARTITION
       for (i = 0; i <= 3; i++)
         if (fend[i] >= 0)
           printf(" %lld-%lld",ridx+fbeg[i]/tbyte,ridx+fend[i]/tbyte);
@@ -324,7 +324,9 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
       counter = profile[hsym];
       hlen  <<= 1;
 
-      printf("hlen=%d\n",hlen);
+#ifdef DEBUG_QUEUE
+      printf("TOP hlen=%d\n",hlen);
+#endif
 
       while (1)
         { for (i = 0; i <= 3; i++)
@@ -335,26 +337,39 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
           SET(i);
           for (i++; i <= 3; i++)
             if (fing[i] < fend[i])
-              { /*printf("Compare ");
+              { 
+#ifdef DEBUG_QUEUE
+                printf("Compare ");
                 print_seq(cache+fing[b],kmer);
                 printf(" [%d:%d] ",kbase+b,kbase+b+kextn-i);
                 print_seq(cache+fing[i],kmer);
-                printf(" [%d:%d] ",kbase+i,kbase+kextn);*/
+                printf(" [%d:%d] ",kbase+i,kbase+kextn);
+#endif
                 int v = mybpcmp(cache+fing[b],cache+fing[i],kbase+b,kbase+i,kextn-i);
                 if (v == 0) {
-                  //printf("Add");
+#ifdef DEBUG_QUEUE
+                  printf("Add");
+#endif
                   ADD(i)
                 }
                 else if (v < 0) {
-                  //printf("Set");
+#ifdef DEBUG_QUEUE
+                  printf("Set");
+#endif
                   SET(i)
                 }
-                //printf("\n");
+#ifdef DEBUG_QUEUE
+                printf("\n");
+#endif
               }
 
 #ifdef DEBUG_QUEUE
-          for (i = 0; i < a; i++)
-            printf(" %d(%d) %lld",advn[i],COUNT_OF(cache+fing[advn[i]]),ridx+fing[advn[i]]/tbyte);
+          printf("a=%d\n",a);
+          for (i = 0; i < a; i++) {
+            printf("i=%d: %d(%d) %lld ",i,advn[i],COUNT_OF(cache+fing[advn[i]]),ridx+fing[advn[i]]/tbyte);
+            print_seq(cache+fing[advn[i]],kmer);
+            printf("\n");
+          }
 #endif
 
           cn[0] = cn[1] = cn[2] = cn[3] = 0;
@@ -366,15 +381,19 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
                 fing[b] = fend[b+1];
             }
 
-          /*for (i = 0; i <= 3; i++)
-            printf("cn[%d]=%d ",i,cn[i]);
-          printf("\n");*/
+#ifdef DEBUG_DATA_POINT
+          printf("cn=");
+          for (i = 0; i <= 3; i++)
+            printf("%d ",cn[i]);
+          printf("\n");
+#endif
 
           if (GOOD_LOW <= cn[1] && cn[1] <= GOOD_HGH && cn[0] <= ERROR && cn[2] <= ERROR)
             { counter[hlen].correct += cn[1];
               counter[hlen].lessone += cn[0]; 
               counter[hlen].plusone += cn[2]; 
 #ifdef DEBUG_DATA_POINT
+              printf("hlen=%d\n",hlen);
               printf(" -> %d%c %d:%d:%d\n",hlen,dna[hsym],cn[0],cn[1],cn[2]);
               fflush(stdout);
 #endif
@@ -385,6 +404,7 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
                   counter[hlen+1].lessone += cn[1]; 
                   counter[hlen+1].plusone += cn[3]; 
 #ifdef DEBUG_DATA_POINT
+                  printf("hlen=%d\n",hlen);
                   printf(" -> %d%c %d:%d:%d\n",hlen+1,dna[hsym],cn[1],cn[2],cn[3]);
               fflush(stdout);
 #endif

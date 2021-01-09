@@ -22,7 +22,7 @@
 
 static char *Usage = "-e<int> -g<int>:<int> <source_root>[.ktab]";
 
-#define MAX_HOMO_LEN 10
+#define MAX_HOMO_LEN 20
 
 /****************************************************************************************
  *
@@ -194,7 +194,7 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
 
   setup_fmer_table();
 
-  for (hsym = 0; hsym < 4*4; hsym++)
+  for (hsym = 0; hsym < 4*4*4; hsym++)
     for (hlen = 0; hlen < MAX_HOMO_LEN; hlen++)
       { profile[hsym][hlen].correct = 0;
         profile[hsym][hlen].lessone = 0;
@@ -562,6 +562,7 @@ int main(int argc, char *argv[])
       }*/
 
     for (i = 0; i < 4 * 4 * 4; i++) {
+        if (i % 21 == 0) continue;
         for (h = 2; h <= MAX_HOMO_LEN; h++) {
             int64 cc = (*P)[i][h].correct;
             int64 cl = (*P)[i][h].lessone;

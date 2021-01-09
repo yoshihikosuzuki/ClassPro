@@ -22,7 +22,7 @@
 
 static char *Usage = "-e<int> -g<int>:<int> <source_root>[.ktab]";
 
-#define MAX_HOMO_LEN 10
+#define MAX_HOMO_LEN 20
 
 /****************************************************************************************
  *
@@ -144,8 +144,10 @@ static inline int mybpcmp(uint8 *a, uint8 *b, int x, int y, int n)
 
 typedef struct
   { int64   correct;
-    int64   lessone;
-    int64   plusone;
+    int64   lessoneunit;
+    int64   plusoneunit;
+    int64   lessonebase;
+    int64   plusonebase;
   } Point;
 
 typedef Point Profile[4*4][MAX_HOMO_LEN+1];
@@ -170,15 +172,15 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
   uint8 *cache, *cptr, *ctop;
 
   int    i;
-  int64  fing[4];
-  int64  fend[4];
-  int64  fbeg[5];
+  int64  fing[4+3];
+  int64  fend[4+3];
+  int64  fbeg[5+3];
 
   int    hlen, hsym;
   uint8  suffix[kbyte];
 
-  int   a, b, advn[4];
-  int   cn[4];
+  int   a, b, advn[4+3];
+  int   cn[4+3];
   int64 ridx;
 
   setup_fmer_table();
@@ -186,8 +188,10 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
   for (hsym = 0; hsym < 4*4; hsym++)
     for (hlen = 0; hlen < MAX_HOMO_LEN; hlen++)
       { profile[hsym][hlen].correct = 0;
-        profile[hsym][hlen].lessone = 0;
-        profile[hsym][hlen].plusone = 0;
+        profile[hsym][hlen].lessoneunit = 0;
+        profile[hsym][hlen].plusoneunit = 0;
+        profile[hsym][hlen].lessonebase = 0;
+        profile[hsym][hlen].plusonebase = 0;
       }
 
   khalf = kmer/2;
@@ -257,8 +261,8 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
       kbase = khalf + (hlen-1)*2;
       kchkl = khalf + (hlen+2)*2;
       kextn = kmer - kbase;
-      //printf("kbase=%d, kchkl=%d, kextn=%d\n",kbase,kchkl,kextn);
-      for (i = 0; i <= 3; i++)
+      //printf("khalf=%d, klong=%d, kbase=%d, kchkl=%d, kextn=%d\n",khalf,klong,kbase,kchkl,kextn);
+      for (i = 0; i <= 3+3; i++)
         fend[i] = -1;
     
       cptr = cache;
@@ -266,6 +270,8 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
         { int x = mypref(iptr,suffix,kchkl);
           if (x < khalf)
             break;
+          //print_seq(iptr,kmer);
+          //printf(" x=%d\n",x);
           if (cptr+tbyte >= ctop)
             { int64 cidx = cptr-cache;
               int64 cmax = cidx*1.4 + 2048*tbyte;
@@ -275,9 +281,11 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
             }
           mycpy(cptr,iptr,tbyte);
           x -= kbase;
-          x /= 2;
-          if (0 <= x && x <= 3)
-            { if (fend[x] < 0)
+          //x /= 2;
+          if (0 <= x && x <= 3+3)
+            { //print_seq(iptr,kmer);
+              //printf(" x=%d, kbase=%d\n",x,kbase);
+              if (fend[x] < 0)
                 fbeg[x] = cptr - cache;
               fend[x] = cptr - cache;
             }
@@ -285,14 +293,18 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
         }
 
 #ifdef DEBUG_PARTITION
-      for (i = 0; i <= 3; i++) {
+      for (i = 0; i <= 3+3; i++) {
         printf("i=%d: ",i);
-        print_seq(cache+fbeg[i],kmer);
-        printf(", ");
-        print_seq(cache+fend[i],kmer);
+        if (fend[i] >= 0)
+          { print_seq(cache+fbeg[i],kmer);
+            printf(", ");
+            print_seq(cache+fend[i],kmer);
+          }
+        else
+          printf("***");
         printf("\n");
       }
-      for (i = 0; i <= 3; i++)
+      for (i = 0; i <= 3+3; i++)
         if (fend[i] >= 0)
           printf(" %lld-%lld",ridx+fbeg[i]/tbyte,ridx+fend[i]/tbyte);
       printf(" >> %lld\n",ridx+(cptr-cache)/tbyte);
@@ -304,7 +316,7 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
           continue;
         }
 
-      for (i = 3; i >= 0; i--)
+      for (i = 3+3; i >= 0; i--)
         if (fend[i] < 0)
           fing[i] = fend[i] = fbeg[i] = 0;
         else
@@ -313,7 +325,7 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
           }
 
 #ifdef DEBUG_PARTITION
-      for (i = 0; i <= 3; i++)
+      for (i = 0; i <= 3+3; i++)
         if (fend[i] == 0)
           printf(" ***");
         else
@@ -333,26 +345,28 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
       counter = profile[hsym];
       hlen  <<= 1;
 
-      //printf("hlen=%d\n",hlen);
+#ifdef DEBUG_QUEUE
+      printf("TOP hlen=%d\n",hlen);
+#endif
 
       while (1)
-        { for (i = 0; i <= 3; i++)
+        { for (i = 0; i <= 3 + 3; i++)
             if (fing[i] < fend[i])
               break;
-          if (i > 3)
+          if (i > 3 + 3)
             break;
           SET(i);
-          for (i++; i <= 3; i++)
+          for (i++; i <= 3 + 3; i++)
             if (fing[i] < fend[i])
               { 
 #ifdef DEBUG_QUEUE
                 printf("Compare ");
                 print_seq(cache+fing[b],kmer);
-                printf(" [%d:%d] ",kbase+b*2,kbase+b*2+kextn-i*2);
+                printf(" [%d:%d] ",kbase+b,kbase+b+kextn-i);
                 print_seq(cache+fing[i],kmer);
-                printf(" [%d:%d] ",kbase+i*2,kbase+kextn);
+                printf(" [%d:%d] ",kbase+i,kbase+kextn);
 #endif
-                int v = mybpcmp(cache+fing[b],cache+fing[i],kbase+b*2,kbase+i*2,kextn-i*2);
+                int v = mybpcmp(cache+fing[b],cache+fing[i],kbase+b,kbase+i,kextn-i);
                 if (v == 0) {
 #ifdef DEBUG_QUEUE
                   printf("Add");
@@ -370,12 +384,17 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
 #endif
               }
 
-#ifdef DEBUG_QUEUE
-          for (i = 0; i < a; i++)
-            printf(" %d(%d) %lld\n",advn[i],COUNT_OF(cache+fing[advn[i]]),ridx+fing[advn[i]]/tbyte);
+#ifdef DEBUG_DATA_POINT
+          printf("a=%d\n",a);
+          for (i = 0; i < a; i++) {
+            printf("i=%d: %d(%d) %lld ",i,advn[i],COUNT_OF(cache+fing[advn[i]]),ridx+fing[advn[i]]/tbyte);
+            print_seq(cache+fing[advn[i]],kmer);
+            printf("\n");
+          }
 #endif
 
-          cn[0] = cn[1] = cn[2] = cn[3] = 0;
+          for (i = 0; i <= 3+3; i++)
+            cn[i] = 0;
           for (i = 0; i < a; i++)
             { b = advn[i];
               cn[b] = COUNT_OF(cache+fing[b]);
@@ -385,29 +404,55 @@ Profile *Count_Homopolymer_Errors(Kmer_Stream *T)
             }
 
 #ifdef DEBUG_DATA_POINT
-          for (i = 0; i <= 3; i++)
-            printf("cn[%d]=%d ",i,cn[i]);
+          printf("cn=");
+          for (i = 0; i <= 3+3; i++)
+            printf("%d ",cn[i]);
           printf("\n");
 #endif
 
-          if (GOOD_LOW <= cn[1] && cn[1] <= GOOD_HGH && cn[0] <= ERROR && cn[2] <= ERROR)
-            { counter[hlen].correct += cn[1];
-              counter[hlen].lessone += cn[0]; 
-              counter[hlen].plusone += cn[2]; 
+          if (GOOD_LOW <= cn[2] && cn[2] <= GOOD_HGH)
+            { counter[hlen].correct += cn[2];
+              if (cn[0] <= ERROR && cn[4] <= ERROR)
+                { counter[hlen].lessoneunit += cn[0];
+                  counter[hlen].plusoneunit += cn[4];
 #ifdef DEBUG_DATA_POINT
-              printf(" -> %d%s %d:%d:%d\n",hlen,dnadi[hsym],cn[0],cn[1],cn[2]);
+              printf("[unit2] hlen=%d\n",hlen);
+              printf(" -> %d%s %d:%d:%d\n",hlen,dnadi[hsym],cn[0],cn[2],cn[4]);
               fflush(stdout);
 #endif
+                }
+              if (cn[1] <= ERROR && cn[3] <= ERROR)
+                { counter[hlen].lessonebase += cn[1];
+                  counter[hlen].plusonebase += cn[3];
+#ifdef DEBUG_DATA_POINT
+              printf("[base2] hlen=%d\n",hlen);
+              printf(" -> %d%s %d:%d:%d\n",hlen,dnadi[hsym],cn[1],cn[2],cn[3]);
+              fflush(stdout);
+#endif
+                }
             }
-          else if (GOOD_LOW <= cn[2] && cn[2] <= GOOD_HGH && cn[1] <= ERROR && cn[3] <= ERROR)
-            { if (hlen < MAX_HOMO_LEN / 2)
-                { counter[hlen+1].correct += cn[2];
-                  counter[hlen+1].lessone += cn[1]; 
-                  counter[hlen+1].plusone += cn[3]; 
+          else if (GOOD_LOW <= cn[4] && cn[4] <= GOOD_HGH)
+            { //printf("hlen=%d, MAX_HOMO_LEN=%d\n",hlen,MAX_HOMO_LEN);
+              if (hlen < MAX_HOMO_LEN)
+                { counter[hlen+1].correct += cn[4];
+                  if (cn[2] <= ERROR && cn[6] <= ERROR)
+                    { counter[hlen+1].lessoneunit += cn[2]; 
+                      counter[hlen+1].plusoneunit += cn[6]; 
 #ifdef DEBUG_DATA_POINT
-                  printf(" -> %d%s %d:%d:%d\n",hlen+1,dnadi[hsym],cn[1],cn[2],cn[3]);
+                  printf("[unit4] hlen=%d\n",hlen);
+                  printf(" -> %d%s %d:%d:%d\n",hlen+1,dnadi[hsym],cn[2],cn[4],cn[6]);
               fflush(stdout);
 #endif
+                    }
+                  if (cn[3] <= ERROR && cn[5] <= ERROR)
+                    { counter[hlen+1].lessonebase += cn[3]; 
+                      counter[hlen+1].plusonebase += cn[5]; 
+#ifdef DEBUG_DATA_POINT
+                  printf("[base4] hlen=%d\n",hlen);
+                  printf(" -> %d%s %d:%d:%d\n",hlen+1,dnadi[hsym],cn[3],cn[4],cn[5]);
+              fflush(stdout);
+#endif
+                    }
                 }
             }
 #ifdef DEBUG_QUEUE
@@ -538,11 +583,18 @@ int main(int argc, char *argv[])
       }*/
 
     for (i = 0; i < 4 * 4; i++) {
+        if (i % 5 == 0) continue;
         for (h = 2; h <= MAX_HOMO_LEN; h++) {
             int64 cc = (*P)[i][h].correct;
-            int64 cl = (*P)[i][h].lessone;
-            int64 cp = (*P)[i][h].plusone;
-            printf(" %2d %s: %10lld %10lld %10lld -> %.3f%%\n",h,dnadi[i],cl,cc,cp,(100.*(cl+cp))/(cc+cl+cp));
+            int64 cl = (*P)[i][h].lessoneunit;
+            int64 cp = (*P)[i][h].plusoneunit;
+            printf(" %2d [unit] %s: %10lld %10lld %10lld -> %.3f%%\n",h,dnadi[i],cl,cc,cp,(100.*(cl+cp))/(cc+cl+cp));
+        }
+        for (h = 2; h <= MAX_HOMO_LEN; h++) {
+            int64 cc = (*P)[i][h].correct;
+            int64 cl = (*P)[i][h].lessonebase;
+            int64 cp = (*P)[i][h].plusonebase;
+            printf(" %2d [base] %s: %10lld %10lld %10lld -> %.3f%%\n",h,dnadi[i],cl,cc,cp,(100.*(cl+cp))/(cc+cl+cp));
         }
     }
   }

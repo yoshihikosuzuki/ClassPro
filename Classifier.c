@@ -113,6 +113,7 @@ double calc_logp_h(int i, uint16* profile, int* chpt, char* asgn, int N, int* de
     logp_r = logp_binom(MIN(rc, cie), MAX(rc, cie), 1 - P_ERROR);
   if (lc == -1) logp_l = logp_r;
   if (rc == -1) logp_r = logp_l;
+  // TODO: 直前と直後の H-interval から Skellam/Binom で説明ができる確率
   return logp_l + logp_r + logp_p;
 }
 
@@ -154,6 +155,7 @@ double calc_logp_d(int i, uint16* profile, int* chpt, char* asgn, int N, int* de
     logp_r = logp_binom(MIN(rc, cie), MAX(rc, cie), 1 - P_ERROR);
   if (lc == -1) logp_l = logp_r;
   if (rc == -1) logp_r = logp_l;
+  // TODO: 直前と直後の H-interval から Skellam/Binom で説明ができる確率
   return logp_l + logp_r + logp_p;
 }
 

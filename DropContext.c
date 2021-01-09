@@ -143,6 +143,16 @@ int main(int argc, char *argv[])
             Fetch_Profile(P,(int64) id-1,plen,profile);
           }
 
+        // Ignore reads with repeats
+        int flag_rep = 0;
+        for (int i = 0; i < tlen; i++) {
+          if (profile[i] > GOOD_HGH) {
+            flag_rep = 1;
+            break;
+          }
+        }
+        if (flag_rep == 1) continue;
+
         Load_Read(db,id-1,seq,1);
         pseq = seq + km1;
 
@@ -160,8 +170,8 @@ int main(int argc, char *argv[])
                 if ((pseq[i-2] != pseq[i-1] || pseq[i-1] != pseq[i])
                     && pseq[i-5] == pseq[i-2] && pseq[i-4] == pseq[i-1] && pseq[i-3] == pseq[i])
                   tri = 1;
-                printf("Read %8d, @ %8d, %3d -> %3d (%.*s|%.*s): %c %c %c\n",
-                       id,km1+i+1,profile[i],profile[i+1],
+                printf("Read %8d, @ %8d, %3d -> %3d (-%2d) ...%.*s|%.*s... %c %c %c\n",
+                       id,km1+i+1,profile[i],profile[i+1],profile[i]-profile[i+1],
                        20,pseq+i-20+1,
                        20,pseq+i+1,
                        homo?'1':' ',
