@@ -28,14 +28,16 @@
   //  HISTOGRAM
 
 typedef struct
-  { int    kmer;  //  Histogram is for k-mers of this length
-    int    low;   //  Histogram is for range [low,hgh]
+  { int    kmer;    //  Histogram is for k-mers of this length
+    int    unique;  // 1 => count  of unique k-mers, 0 => count of k-mer instances
+    int    low;     //  Histogram is for range [low,hgh]
     int    high;
-    int64 *hist;  //  hist[i] for i in [low,high] = # of k-mers occuring i times
+    int64 *hist;    //  hist[i] for i in [low,high] = # of k-mers occuring i times
   } Histogram;
 
 Histogram *Load_Histogram(char *name);
-void       Subrange_Histogram(Histogram *H, int low, int high);
+void       Modify_Histogram(Histogram *H, int low, int high, int unique);
+int        Write_Histogram(char *name, Histogram *H);
 void       Free_Histogram(Histogram *H);
 
 
@@ -54,13 +56,10 @@ typedef struct
 Kmer_Table *Load_Kmer_Table(char *name, int cut_off);
 void        Free_Kmer_Table(Kmer_Table *T);
 
-char       *Fetch_Kmer(Kmer_Table *T, int64 i);
+char       *Fetch_Kmer(Kmer_Table *T, int64 i, char *seq);
 int         Fetch_Count(Kmer_Table *T, int64 i);
 
 int64       Find_Kmer(Kmer_Table *T, char *kseq);
-
-void        List_Kmer_Table(Kmer_Table *T, FILE *out);
-int         Check_Kmer_Table(Kmer_Table *T);
 
 
   //  K-MER STREAM
@@ -82,7 +81,7 @@ void         Free_Kmer_Stream(Kmer_Stream *S);
 uint8       *First_Kmer_Entry(Kmer_Stream *S);
 uint8       *Next_Kmer_Entry(Kmer_Stream *S);
 
-char        *Current_Kmer(Kmer_Stream *entry);
+char        *Current_Kmer(Kmer_Stream *entry, char *seq);
 int          Current_Count(Kmer_Stream *entry);
 
 uint8       *GoTo_Kmer_Index(Kmer_Stream *S, int64 idx);

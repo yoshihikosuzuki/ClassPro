@@ -17,9 +17,38 @@
  *
  *********************************************************************************************/
 
+static void toggle_histogram(Histogram *H)
+{ int64 *hist = H->hist;
+  int    low  = H->low;
+  int    high = H->high;
+  int64  x;
+  int    i;
+
+  if (H->unique)
+    { for (i = low+1; i < high; i++)
+        hist[i] *= i;
+      H->unique = 0;
+    }
+  else
+    { for (i = low+1; i < high; i++)
+        hist[i] /= i;
+      H->unique = 1;
+    }
+
+  x = hist[high+1];
+  hist[high+1] = hist[low];
+  hist[low] = x;
+
+  x = hist[high+2];
+  hist[high+2] = hist[high];
+  hist[high] = x;
+}
+   
+
 Histogram *Load_Histogram(char *name)
 { Histogram *H;
   int        kmer, low, high;
+  int64      ilowcnt, ihighcnt;
   int64     *hist;
   char      *dir, *root, *full;
   int        f;
@@ -40,9 +69,11 @@ Histogram *Load_Histogram(char *name)
   read(f,&kmer,sizeof(int));
   read(f,&low,sizeof(int));
   read(f,&high,sizeof(int));
+  read(f,&ilowcnt,sizeof(int64));
+  read(f,&ihighcnt,sizeof(int64));
 
   H    = Malloc(sizeof(Histogram),"Allocating histogram");
-  hist = Malloc(sizeof(int64)*((high-low)+1),"Allocating histogram");
+  hist = Malloc(sizeof(int64)*((high-low)+3),"Allocating histogram");
   if (H == NULL || hist == NULL)
     exit (1);
 
@@ -53,36 +84,98 @@ Histogram *Load_Histogram(char *name)
   H->kmer = kmer;
   H->low  = low;
   H->high = high;
-  H->hist = hist-low;
+  H->hist = hist = hist-low;
+  H->unique = 1;
+  hist[high+1] = ilowcnt;     // boundary counts for opposite mode hidden at top of histogram
+  hist[high+2] = ihighcnt;
 
   return (H);
 }
 
-void Subrange_Histogram(Histogram *H, int low, int high)
-{ int64  under, over;
+void Modify_Histogram(Histogram *H, int low, int high, int unique)
+{ int64 *hist = H->hist;
+  int64  under, over;
+  int64  hunder, hover;
   int    i;
  
   if (H->low > low || H->high < high)
     return;
 
-  under = 0;
-  for (i = H->low; i < low; i++)
-    under += H->hist[i];
-  over = 0;
-  for (i = high+1; i < H->high; i++)
-    over += H->hist[i];
+  under  = hist[H->low];
+  over   = hist[H->high];
+  for (i = H->low+1; i <= low; i++)
+    under += hist[i];
+  for (i = H->high-1; i >= high; i--)
+    over += hist[i];
+
+  hunder = hist[H->high+1];
+  hover  = hist[H->high+2];
+  if (H->unique)
+    { for (i = H->low+1; i <= low; i++)
+        hunder += hist[i]*i;
+      for (i = H->high-1; i >= high; i--)
+        hover += hist[i]*i;
+    }
+  else
+    { for (i = H->low+1; i <= low; i++)
+        hunder += hist[i]/i;
+      for (i = H->high-1; i >= high; i--)
+        hover += hist[i]/i;
+    }
 
   if (low != H->low)
     memmove(H->hist+H->low,H->hist+low,((high-low)+1)*sizeof(int64));
 
   H->hist += H->low;
-  H->hist  = Realloc(H->hist,((high-low)+1)*sizeof(int64),"Reallocating histogram");
+  H->hist  = Realloc(H->hist,((high-low)+3)*sizeof(int64),"Reallocating histogram");
   H->hist -= low;
+  H->low   = low;
+  H->high  = high;
 
-  H->hist[low]  += under;
-  H->hist[high] += over;
-  H->low  = low;
-  H->high = high;
+  H->hist[low]    = under;
+  H->hist[high]   = over;
+  H->hist[high+1] = hunder;
+  H->hist[high+2] = hover;
+
+  if ((H->unique == 0) != (unique == 0))
+    toggle_histogram(H);
+}
+
+int Write_Histogram(char *name, Histogram *H)
+{ int64 *hist = H->hist;
+  int    low  = H->low;
+  int    high = H->high;
+  char  *dir, *root, *full;
+  int    f;
+
+  if (H->unique == 0)
+    toggle_histogram(H);
+
+  dir  = PathTo(name);
+  root = Root(name,".hist");
+  full = Malloc(strlen(dir)+strlen(root)+10,"Histogram name allocation");
+  if (full == NULL)
+    exit (1);
+  sprintf(full,"%s/%s.hist",dir,root);
+  f = open(full,O_CREAT|O_TRUNC|O_WRONLY,S_IRWXU);
+  if (f < 0)
+    return (1);
+  free(full);
+  free(root);
+  free(dir);
+
+  write(f,&H->kmer,sizeof(int));
+  write(f,&low,sizeof(int));
+  write(f,&high,sizeof(int));
+  write(f,hist+(high+1),sizeof(int64));
+  write(f,hist+(high+2),sizeof(int64));
+  write(f,hist+low,sizeof(int64)*((high-low)+1));
+  close(f);
+
+  if (H->unique == 0)
+    toggle_histogram(H);
+
+  return (0);
 }
 
 void Free_Histogram(Histogram *H)
@@ -138,26 +231,6 @@ static void setup_fmer_table()
          *t++ = 0;
          i += 1;
        }
-}
-
-static void print_seq(FILE *out, uint8 *seq, int len)
-{ int i, b, k;
-
-  b = len >> 2;
-  for (i = 0; i < b; i++)
-    fprintf(out,"%s",fmer[seq[i]]);
-  k = 6;
-  for (i = b << 2; i < len; i++)
-    { fprintf(out,"%c",dna[(seq[b] >> k) & 0x3]);
-      k -= 2;
-    }
-}
-
-static void print_pack(FILE *out, uint8 *seq, int len)
-{ int i;
-
-  for (i = 0; i < (len+3)/4; i++)
-    fprintf(out," %02x",seq[i]);
 }
   
 static inline int mycmp(uint8 *a, uint8 *b, int n)
@@ -328,23 +401,13 @@ Kmer_Table *Load_Kmer_Table(char *name, int cut_off)
  *
  *****************************************************************************************/
 
-char *Fetch_Kmer(Kmer_Table *T, int64 i)
-{ static char *seq = NULL;
-  static int   max = 0;
-
-  int    kmer  = T->kmer;
+char *Fetch_Kmer(Kmer_Table *T, int64 i, char *seq)
+{ int    kmer  = T->kmer;
   int    tbyte = T->tbyte;
   uint8 *table = T->table;
 
-  if (T == NULL)
-    { free(seq);
-      max = 0;
-      return (NULL);
-    }
-
-  if (kmer > max)
-    { max = kmer;
-      seq = Realloc(seq,max+1,"Reallocating k-mer buffer");
+  if (seq == NULL)
+    { seq = Realloc(seq,kmer+3,"Reallocating k-mer buffer");
       if (seq == NULL)
         exit (1);
     }
@@ -373,59 +436,6 @@ void Free_Kmer_Table(Kmer_Table *T)
 { free(T->table);
   free(((_Kmer_Table *) T)->index);
   free(T);
-}
-
-int Check_Kmer_Table(Kmer_Table *T)
-{ int    kmer  = T->kmer;
-  int    tbyte = T->tbyte;
-  int    kbyte = T->kbyte;
-  int64  nels  = T->nels;
-  uint8 *table = T->table;
-  
-  int64 i;
-
-  for (i = 1; i < nels; i++)
-    { if (mycmp(KMER(i-1),KMER(i),kbyte) >= 0)
-        { fprintf(stderr,"\nOut of Order\n");
-          fprintf(stderr," %9lld:",i-1);
-          print_pack(stderr,KMER(i-1),kmer);
-          fprintf(stderr,"  ");
-          print_seq(stderr,KMER(i-1),kmer);
-          fprintf(stderr," = %4d\n",COUNT(i-1));
-          fprintf(stderr," %9lld:",i);
-          print_pack(stderr,KMER(i),kmer);
-          fprintf(stderr,"  ");
-          print_seq(stderr,KMER(i),kmer);
-          fprintf(stderr," = %4d\n",COUNT(i));
-          return (0);
-        }
-    }
-  return (1);
-}
-
-void List_Kmer_Table(Kmer_Table *T, FILE *out)
-{ int    kmer  = T->kmer;
-  int    tbyte = T->tbyte;
-  int    kbyte = T->kbyte;
-  int64  nels  = T->nels;
-  uint8 *table = T->table;
-
-  int64 i;
-
-  fprintf(out,"\nElement Bytes = %d  Kmer Bytes = %d\n",tbyte,kbyte);
-
-  if (nels > 0)
-    { fprintf(out," %9d: ",0);
-      print_seq(out,KMER(0),kmer);
-      fprintf(out," = %5d\n",COUNT(0));
-    }
-  for (i = 1; i < nels; i++)
-    { if (mycmp(KMER(i-1),KMER(i),kbyte) >= 0)
-        fprintf(out,"Out of Order\n");
-      fprintf(out," %9lld: ",i);
-      print_seq(out,KMER(i),kmer);
-      fprintf(out," = %5d\n",COUNT(i));
-    }
 }
 
 
@@ -891,21 +901,11 @@ inline uint8 *Next_Kmer_Entry(Kmer_Stream *S)
   return (REAL(S)->celm);
 }
 
-char *Current_Kmer(Kmer_Stream *S)
-{ static char *seq = NULL;
-  static int   max = 0;
+char *Current_Kmer(Kmer_Stream *S, char *seq)
+{ int kmer = S->kmer;
 
-  int kmer = S->kmer;
-
-  if (S == NULL)
-    { free(seq);
-      max = 0;
-      return (NULL);
-    }
-
-  if (kmer > max)
-    { max = kmer;
-      seq = Realloc(seq,max+1,"Reallocating k-mer buffer");
+  if (seq == NULL)
+    { seq = Realloc(seq,kmer+3,"Reallocating k-mer buffer");
       if (seq == NULL)
         exit (1);
     }
