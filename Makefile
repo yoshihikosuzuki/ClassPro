@@ -1,15 +1,15 @@
 CC = gcc
 CFLAGS = -g -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 LDFLAGS = -lpthread -lm
-ALL = EmerRate Homex HomexDi HomexTri DropContext Classifier
+ALL = CoverRate Classifier
 
 all: $(ALL)
 
 libfastk.c: gene_core.c
 libfastk.h: gene_core.h
 
-EmerRate: EmerRate.c libfastk.c libfastk.h
-	$(CC) $(CFLAGS) -o $@ EmerRate.c libfastk.c $(LDFLAGS)
+CoverRate: CoverRate.c libfastk.c libfastk.h
+	$(CC) $(CFLAGS) -o $@ CoverRate.c libfastk.c $(LDFLAGS)
 
 Homex: Homex.c libfastk.c libfastk.h
 	$(CC) $(CFLAGS) -o $@ Homex.c libfastk.c $(LDFLAGS)
