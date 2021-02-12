@@ -381,6 +381,7 @@ Kmer_Table *Load_Kmer_Table(char *name, int cut_off)
       for (First_Kmer_Entry(S); S->csuf != NULL; Next_Kmer_Entry(S))
         if (Current_Count(S) >= cut_off)
           nels += 1;
+      Free_Kmer_Stream(S);
     }
 
   else
@@ -425,6 +426,7 @@ Kmer_Table *Load_Kmer_Table(char *name, int cut_off)
       int64  off;
       int    x;
 
+      S = Open_Kmer_Stream(name);
       jptr = table;
       for (First_Kmer_Entry(S); S->csuf != NULL; Next_Kmer_Entry(S))
         if (Current_Count(S) >= cut_off)
@@ -968,7 +970,7 @@ inline void First_Kmer_Entry(Kmer_Stream *_S)
 
       More_Kmer_Stream(S);
       S->cidx = 0;
-      S->cpre = 1;
+      S->cpre = 0;
       while (index[S->cpre] <= 0)
         S->cpre += 1;
     }
