@@ -314,6 +314,7 @@ Kmer_Table *Load_Kmer_Table(char *name, int cut_off)
       for (iptr = First_Kmer_Entry(S); iptr != NULL; iptr = Next_Kmer_Entry(S))
         if (COUNT_OF(iptr) >= cut_off)
           nels += 1;
+      Free_Kmer_Stream(S);
     }
 
   else
@@ -353,6 +354,7 @@ Kmer_Table *Load_Kmer_Table(char *name, int cut_off)
 
     { uint8 *iptr, *jptr;
 
+      S = Open_Kmer_Stream(name);
       jptr = table;
       for (iptr = First_Kmer_Entry(S); iptr != NULL; iptr = Next_Kmer_Entry(S))
         if (COUNT_OF(iptr) >= cut_off)
@@ -789,6 +791,67 @@ inline uint8 *First_Kmer_Entry(Kmer_Stream *_S)
 
       More_Kmer_Stream(S);
       S->cidx = 0;
+      S->cpre = 0;
+      while (index[S->cpre] <= 0)
+        S->cpre += 1;
+    }
+}
+
+inline void Next_Kmer_Entry(Kmer_Stream *_S)
+{ _Kmer_Stream *S = STREAM(_S);
+
+  S->csuf += S->pbyte;
+  S->cidx += 1;
+  if (S->csuf >= S->ctop)
+    { if (S->cidx >= S->nels)
+        { S->csuf = NULL;
+          S->cpre = S->ixlen;
+          S->part = S->nthr+1;
+          return;
+        }
+      More_Kmer_Stream(S);
+    }
+  while (S->index[S->cpre] <= S->cidx)
+    S->cpre += 1;
+}
+
+char *Current_Kmer(Kmer_Stream *_S, char *seq)
+{ _Kmer_Stream *S = STREAM(_S);
+  int    cpre  = S->cpre;
+  int    hbyte = S->hbyte;
+
+  if (seq == NULL)
+    { seq = (char *) Malloc(S->kmer+3,"Reallocating k-mer buffer");
+      if (seq == NULL)
+        exit (1);
+      if (S->csuf == NULL)
+        return (seq);
+    }
+
+  { int    j;
+    uint8 *a;
+    char  *s;
+
+    s = seq;
+    switch (S->ibyte)
+    { case 3:
+        memcpy(s,fmer[cpre>>16],4);
+        s += 4;
+        memcpy(s,fmer[cpre>>8 & 0xff],4);
+        s += 4;
+        memcpy(s,fmer[cpre&0xff],4);
+        s += 4;
+        break;
+      case 2:
+        memcpy(s,fmer[cpre>>8],4);
+        s += 4;
+        memcpy(s,fmer[cpre&0xff],4);
+        s += 4;
+        break;
+      case 1:
+        memcpy(s,fmer[cpre],4);
+        s += 4;
+        break;
     }
 
   return (S->celm);
