@@ -1,30 +1,15 @@
 CC = gcc
-CFLAGS = -g -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
+CFLAGS = -g -O0 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 LDFLAGS = -lpthread -lm
-ALL = CoverRate Classifier
+ALL = Classifier
 
 all: $(ALL)
 
 libfastk.c: gene_core.c
 libfastk.h: gene_core.h
 
-CoverRate: CoverRate.c libfastk.c libfastk.h
-	$(CC) $(CFLAGS) -o $@ CoverRate.c libfastk.c $(LDFLAGS)
-
-Homex: Homex.c libfastk.c libfastk.h
-	$(CC) $(CFLAGS) -o $@ Homex.c libfastk.c $(LDFLAGS)
-
-HomexDi: HomexDi.c libfastk.c libfastk.h
-	$(CC) $(CFLAGS) -o $@ HomexDi.c libfastk.c $(LDFLAGS)
-
-HomexTri: HomexTri.c libfastk.c libfastk.h
-	$(CC) $(CFLAGS) -o $@ HomexTri.c libfastk.c $(LDFLAGS)
-
-DropContext: DropContext.c libfastk.c libfastk.h DB.c DB.h QV.c QV.h
-	$(CC) $(CFLAGS) -o $@ DropContext.c libfastk.c DB.c QV.c $(LDFLAGS)
-
-Classifier: Classifier.c libfastk.c libfastk.h DB.c DB.h QV.c QV.h
-	$(CC) $(CFLAGS) -o $@ Classifier.c libfastk.c DB.c QV.c $(LDFLAGS)
+Classifier: Classifier.c libfastk.c libfastk.h DB.c DB.h QV.c QV.h bessel.c bessel.h
+	$(CC) $(CFLAGS) -o $@ Classifier.c libfastk.c DB.c QV.c bessel.c $(LDFLAGS)
 
 clean:
 	rm -f $(ALL)

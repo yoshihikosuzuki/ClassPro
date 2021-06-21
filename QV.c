@@ -18,7 +18,6 @@
 #include <unistd.h>
 
 #include "DB.h"
-#include "gene_core.h"
 
 #undef DEBUG
 

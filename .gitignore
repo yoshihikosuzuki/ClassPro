@@ -2,6 +2,9 @@ CoverRate
 Classifier
 DropContext
 Homex*
+hoge.c
+a.out
+Classifier.old.c
 
 # Prerequisites
 *.d
