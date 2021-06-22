@@ -32,7 +32,7 @@
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 
-static const char *Usage = "[-vs] [-T<int(4)>] [-c<int>] [-r<int>] <source_root>";
+static const char *Usage = "[-vs] [-T<int(4)>] [-c<int>] [-r<int(20000)>] <source_root>";
 
 enum State { ERROR, REPEAT, HAPLO, DIPLO, N_STATE };
 enum Ctype { HP, DS, TS, N_CTYPE };
