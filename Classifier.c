@@ -13,7 +13,7 @@
 #include "bessel.h"
 
 #define DEBUG
-#define DEBUG_SMALL
+#undef DEBUG_SMALL
 #define DEBUG_NO_MERGE
 #undef DEBUG_BINOM
 #undef DEBUG_CTX
@@ -21,10 +21,10 @@
 #undef DEBUG_INTVL
 #undef DEBUG_COR
 #undef DEBUG_PMM
-#define DEBUG_PROB
-#define DEBUG_REL
+#undef DEBUG_PROB
+#undef DEBUG_REL
 #undef DEBUG_UNREL
-#define DEBUG_ITER
+#undef DEBUG_ITER
 #undef DEBUG_MERGE
 
 #define THREAD pthread_t
@@ -1350,7 +1350,7 @@ static double calc_logp_e(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror,
 #endif
 
   logp_po = logp_poisson(ri.ci,cov[ERROR]);
-  logp_er = -DBL_MAX;
+  logp_er = -INFINITY;
   if (ri.i > 0)
     logp_er = log(perror[ri.i][SELF][DROP]);
   logp_l = MAX(logp_po,logp_er);
@@ -1360,7 +1360,7 @@ static double calc_logp_e(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror,
 #endif
 
   logp_po = logp_poisson(ri.cj,cov[ERROR]);
-  logp_er = -DBL_MAX;
+  logp_er = -INFINITY;
   if (ri.j < plen)
     logp_er = log(perror[ri.j][SELF][GAIN]);
   logp_r = MAX(logp_po,logp_er);
@@ -1427,7 +1427,7 @@ static double calc_logp_r(int idx, Rel_Intvl *rintvl, int M, int cov[])
   double _lambda;
   _lambda = (double)pc*(ri.i-pe+1)/READ_LEN;
   logp_sf = logp_skellam(ri.ci-pc,_lambda);
-  logp_er = (pc > ri.ci) ? logp_binom(ri.ci,pc,1-0.01) : -DBL_MAX;   // TODO: binom test? use ctx
+  logp_er = (pc > ri.ci) ? logp_binom(ri.ci,pc,1-0.01) : -INFINITY;   // TODO: binom test? use ctx
   logp_l = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
@@ -1436,7 +1436,7 @@ static double calc_logp_r(int idx, Rel_Intvl *rintvl, int M, int cov[])
 
   _lambda = (double)nc*(nb-ri.i+1)/READ_LEN;
   logp_sf = logp_skellam(nc-ri.cj,_lambda);
-  logp_er = (ri.cj < nc) ? logp_binom(ri.cj,nc,1-0.01) : -DBL_MAX;
+  logp_er = (ri.cj < nc) ? logp_binom(ri.cj,nc,1-0.01) : -INFINITY;
   logp_r = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
@@ -1448,7 +1448,7 @@ static double calc_logp_r(int idx, Rel_Intvl *rintvl, int M, int cov[])
 
 static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *cerror, int cov[])
 { Rel_Intvl ri = rintvl[idx];
-  double logp_l = -DBL_MAX, logp_r = -DBL_MAX;
+  double logp_l = -INFINITY, logp_r = -INFINITY;
   double logp_sf, logp_er;
 
   int nn_idx[2];
@@ -1457,13 +1457,12 @@ static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *ce
   int n = nn_idx[1];
 
   if (p >= 0)
-    { double _lambda = cov[s]*(ri.i-rintvl[p].j+1)/READ_LEN;   // FIXME: k=0,lambda=0 if adjacent???
+    { double _lambda = (double)cov[s]*(ri.i-rintvl[p].j+1)/READ_LEN;
       logp_sf = logp_skellam(ri.ci-rintvl[p].cj,_lambda);
-      fprintf(stderr,"p=%d,n=%d, k=%d, _lambda=%lf, logp_sf=%lf\n",p,n,ri.ci-rintvl[p].cj,_lambda,logp_sf);
       if (rintvl[p].j == ri.i)
-        logp_er = log(MAX(cerror[ri.i][OTHERS][DROP],cerror[ri.i][OTHERS][GAIN]));   // TODO: MAX?
+        logp_er = log(MAX(cerror[ri.i][OTHERS][DROP],cerror[ri.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
       else
-        logp_er = -DBL_MAX;
+        logp_er = -INFINITY;
       logp_l = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
@@ -1471,13 +1470,12 @@ static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *ce
 #endif
     }
   if (n < M)
-    { double _lambda = cov[s]*(rintvl[n].i-ri.j+1)/READ_LEN;
+    { double _lambda = (double)cov[s]*(rintvl[n].i-ri.j+1)/READ_LEN;
       logp_sf = logp_skellam(rintvl[n].ci-ri.cj,_lambda);
-      fprintf(stderr,"p=%d,n=%d, k=%d, _lambda=%lf, logp_sf=%lf\n",p,n,ri.ci-rintvl[p].cj,_lambda,logp_sf);
       if (ri.j == rintvl[n].i)
         logp_er = log(MAX(cerror[ri.j][OTHERS][DROP],cerror[ri.j][OTHERS][GAIN]));
       else
-        logp_er = -DBL_MAX;
+        logp_er = -INFINITY;
       logp_r = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
@@ -1510,11 +1508,11 @@ static double calc_logp_h(int idx, Rel_Intvl *rintvl, int M, P_Error *cerror, in
   int n = nn_idx[1];
   if (p >= 0)
     { if (rintvl[p].cj < ri.ci)
-        return -DBL_MAX;
+        return -INFINITY;
     }
   if (n < M)
     { if (ri.cj > rintvl[n].ci)
-        return -DBL_MAX;
+        return -INFINITY;
     }
   
   int est_cnt[2];
@@ -1523,9 +1521,9 @@ static double calc_logp_h(int idx, Rel_Intvl *rintvl, int M, P_Error *cerror, in
   int nc = (int)((double)est_cnt[1]/1.25);
 
   if (pc > 0 && pc <= ri.ci)
-    return -DBL_MAX;
+    return -INFINITY;
   if (nc > 0 && nc <= ri.cj)
-    return -DBL_MAX;
+    return -INFINITY;
 
   return calc_logp_hd(HAPLO,idx,rintvl,M,cerror,cov);
 }
@@ -1550,14 +1548,14 @@ static double calc_logp_d(int idx, Rel_Intvl *rintvl, int M, P_Error *cerror, in
    nc = pc;
   
   if (ri.ci < pc && ri.cj < nc)
-    return -DBL_MAX;
+    return -INFINITY;
 
   return calc_logp_hd(DIPLO,idx,rintvl,M,cerror,cov);
 }
 
 static int update_state(int idx, Rel_Intvl *rintvl, int M, int plen, P_Error *perror, P_Error *cerror, int cov[])
 { char   s, smax = N_STATE;
-  double logp, logpmax = -DBL_MAX;
+  double logp, logpmax = -INFINITY;
 
   for (s = ERROR; s <= DIPLO; s++)
     { if (s == ERROR)
@@ -1624,10 +1622,13 @@ static void classify_reliable(int plen, Rel_Intvl *rintvl, int M, P_Error *perro
         }
     }
 
-#ifdef DEBUG_REL
+#ifdef DEBUG_ITER
+  char init_asgn[M];
   fprintf(stderr,"  Init : ");
   for (int i = 0; i < M; i++)
-    fprintf(stderr,"%c",stoc[(unsigned char)rintvl[i].asgn]);
+    { fprintf(stderr,"%c",stoc[(unsigned char)rintvl[i].asgn]);
+      init_asgn[i] = rintvl[i].asgn;
+    }
   fprintf(stderr,"\n");
   fflush(stderr);
 #endif
@@ -1643,8 +1644,8 @@ static void classify_reliable(int plen, Rel_Intvl *rintvl, int M, P_Error *perro
   int counter;
   for (counter = 0; counter < MAX_NITER; counter++)
     {
-#ifdef DEBUG_ITER
-      fprintf(stderr,".");
+#ifdef DEBUG_REL
+      fprintf(stderr,"[%dU]\n",counter+1);
 #endif
       int changed = 0;
       for (int i = M - 1; i >= 0; i--)
@@ -1652,8 +1653,8 @@ static void classify_reliable(int plen, Rel_Intvl *rintvl, int M, P_Error *perro
           changed = 1;
       if (!changed) break;
 
-#ifdef DEBUG_ITER
-      fprintf(stderr,".");
+#ifdef DEBUG_REL
+      fprintf(stderr,"[%dD]\n",counter+1);
 #endif
 
       changed = 0;
@@ -1665,12 +1666,11 @@ static void classify_reliable(int plen, Rel_Intvl *rintvl, int M, P_Error *perro
 
 #ifdef DEBUG_ITER
   if (counter == MAX_NITER)
-    fprintf(stderr,"REL Not converged");
-  fprintf(stderr,"\n");
-#endif
-
-#ifdef DEBUG_REL
-  fprintf(stderr,"  Conv : ");
+    fprintf(stderr,"REL Not converged\n");
+  fprintf(stderr,"         ");
+  for (int i = 0; i < M; i++)
+    fprintf(stderr,"%c",(rintvl[i].asgn != init_asgn[i]) ? '*' : ' ');
+  fprintf(stderr,"\n  Conv : ");
   for (int i = 0; i < M; i++)
     fprintf(stderr,"%c",stoc[(unsigned char)rintvl[i].asgn]);
   fprintf(stderr,"\n");
@@ -1820,12 +1820,10 @@ static void *kmer_class_thread(void *arg)
 
       plen = Fetch_Profile(P,(int64)id,db->maxlen,profile);
 
-#ifdef DEBUG
       if (rlen != plen+Km1)
-        { fprintf(stderr,"rlen (%d) != plen+Km1 (%d)\n",rlen,plen+Km1);
+        { fprintf(stderr,"Read %d: rlen (%d) != plen+Km1 (%d)\n",id+1,rlen,plen+Km1);
           exit(1);
         }
-#endif
 
       find_wall(profile,plen,ctx,emodel,perror,cerror,eintvl,rintvl,wall,asgn,K,&N,&M);
 
@@ -1887,11 +1885,11 @@ static void *kmer_class_thread(void *arg)
 }
 
 #ifndef DEBUG_NO_MERGE
-static void *merge_output(Class_Arg *data, int NTHREADS)
+static void merge_output(Class_Arg *data, int NTHREADS)
 { DAZZ_DB    *db   = data[0].db;
   char       *path = data[0].path;
   char       *root = data[0].root;
-  const int   km1  = data[0].P->kmer - 1;
+  const int   km1  = data[0].P->kmer-1;
   DAZZ_STUB  *stub;
   DAZZ_READ  *r;
   char       *track, *seq;
@@ -1906,14 +1904,14 @@ static void *merge_output(Class_Arg *data, int NTHREADS)
   uint32      tsize;
 
   // Prepare DB info
-  { stub = Read_DB_Stub(Catenate(path,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
-    flist = stub->prolog;
-    findx = stub->nreads;
+  { stub      = Read_DB_Stub(Catenate(path,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
+    flist     = stub->prolog;
+    findx     = stub->nreads;
     findx[-1] = 0;
-    map = 0;
+    map       = 0;
 
-    track = New_Read_Buffer(db);
-    seq = New_Read_Buffer(db);
+    track     = New_Read_Buffer(db);
+    seq       = New_Read_Buffer(db);
   }
 
   // Rename the first temporary files to the final output files
@@ -2018,7 +2016,7 @@ static void *merge_output(Class_Arg *data, int NTHREADS)
   free(afname);
   free(dfname);
 
-  return (NULL);
+  return;
 }
 #endif
 
@@ -2134,7 +2132,7 @@ int main(int argc, char *argv[])
     Class_Arg *paramc  = Malloc(sizeof(Class_Arg)*NTHREADS,"Allocating class args");
 
     for (int t = 0; t < NTHREADS; t++)
-      { paramc[t].P      = P;
+      { paramc[t].P      = (t == 0) ? P : Clone_Profiles(P);
         paramc[t].db     = db;
         paramc[t].emodel = emodel;
         paramc[t].path   = path;
@@ -2146,7 +2144,9 @@ int main(int argc, char *argv[])
         paramc[t].end    = MIN((t+1)*NPARTS,NREADS);
       }
 
-    fprintf(stderr,"Classifying%s...\n",FIND_SEEDS ? " & Finding seeds" : "");
+    if (VERBOSE)
+      fprintf(stderr,"Classifying%s...\n",FIND_SEEDS ? " & Finding seeds" : "");
+
     for (int t = 1; t < NTHREADS; t++)
       pthread_create(threads+t,NULL,kmer_class_thread,paramc+t);
     kmer_class_thread(paramc);
