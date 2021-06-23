@@ -13,8 +13,10 @@
 #include "bessel.h"
 
 #define DEBUG
-#undef DEBUG_SMALL
+#define DEBUG_SMALL
 #define DEBUG_NO_MERGE
+#define DEBUG_ITER
+
 #undef DEBUG_BINOM
 #undef DEBUG_CTX
 #undef DEBUG_ERROR
@@ -24,7 +26,6 @@
 #undef DEBUG_PROB
 #undef DEBUG_REL
 #undef DEBUG_UNREL
-#undef DEBUG_ITER
 #undef DEBUG_MERGE
 
 #define THREAD pthread_t
@@ -235,7 +236,6 @@ static inline double binom_test_g(int k, int n, double pe, int exact)
  ********************************************************************************************/
 
 static int CMAX;
-
 #define CIDX(cout, cin) ((cout)*(((cout)+1))>>1)+(cin)-1
 
 typedef struct
@@ -264,6 +264,7 @@ static Error_Model *calc_init_thres()
     { emodel[t].lmax = (uint8)(MAX_CLEN/(t+1));
       
       emodel[t].pe = Malloc(sizeof(double)*(emodel[t].lmax+1),"Allocating pe");
+      emodel[t].pe[0] = 0.;
       for (int l = 1; l <= emodel[t].lmax; l++)
         emodel[t].pe[l] = 0.002 * l * l + 0.002;
 
@@ -333,7 +334,7 @@ static Error_Model *calc_init_thres()
         for (cout = 1; cout <= CMAX; cout++)
           { for (cin = 0; cin <= cout; cin++)
               { int _idx = CIDX(cout,cin);
-                double pe_ex = binom_test_g(cin,cout,emodel[t].pe[l],0);
+                double pe_ex = binom_test_g(cin,cout,emodel[t].pe[MIN(l,emodel[t].lmax)],0);
                 fprintf(stderr,"(%d,%d)@%d=%lf(%lf) ",cout,cin,_idx,emodel[t].pe_bt[l][_idx],pe_ex);
               }
             fprintf(stderr,"\n");
@@ -452,36 +453,48 @@ static void check_drop(int i, uint16 *profile, int plen, Seq_Ctx *ctx[2], Error_
     { m = ctx[0][i][t];
       if (m == 0)
         continue;
+
+      int flag_of = 0;
       n = 0;
-      while (ctx[0][i+(t+1)*(n+1)][t] == m+n+1)
-        n++;
-      m *= t+1;
-      n *= t+1;
+      while (1)
+        { int idx = i+(t+1)*(n+1);
+          if (idx >= plen)
+            { flag_of = 1;
+              break;
+            }
+          if (ctx[0][idx][t] != m+n+1)
+            break;
+          n++;
+        }
+      
+      if (flag_of)
+        { ps = perror[i][SELF][DROP] * perror[i][SELF][DROP];
+          po = perror[i][OTHERS][DROP] * perror[i][OTHERS][DROP];
 
-      j = ipk+n-m;
-      if (j >= plen)
-        continue;
-
-      if (profile[j-1]>profile[j])
-        { perror[j][SELF][GAIN] = 0.;
-          perror[j][OTHERS][GAIN] = 1.;
+#ifdef DEBUG
+          fprintf(stderr,"Drop ctx overflow!\n");
+#endif
+          continue;  // TODO: special treatment instaed of skip?
         }
       else
-        { perror[j][SELF][GAIN] = binom_test_g(profile[j-1],profile[j],emodel[t].pe[ctx[1][j][t]],0);
-          perror[j][OTHERS][GAIN] = binom_test_g(profile[j]-profile[j-1],profile[j],emodel[t].pe[ctx[1][j][t]],0);
-        }
+        { m *= t+1;
+          n *= t+1;
 
-      ps = perror[i][SELF][DROP] * perror[j][SELF][GAIN];
-      po = perror[i][OTHERS][DROP] * perror[j][OTHERS][GAIN];
+          j = ipk+n-m;
+          if (j >= plen)
+            continue;
 
-      if (max_p[0] < ps)
-        { max_p[0] = ps;
-          max_j[0] = j;
-        }
-      if (max_p[1] < po)
-        { max_p[1] = po;
-          max_j[1] = j;
-        }
+          if (profile[j-1]>profile[j])
+            { perror[j][SELF][GAIN] = 0.;
+              perror[j][OTHERS][GAIN] = 1.;
+            }
+          else
+            { perror[j][SELF][GAIN] = binom_test_g(profile[j-1],profile[j],emodel[t].pe[MIN(ctx[1][j][t],emodel[t].lmax)],0);
+              perror[j][OTHERS][GAIN] = binom_test_g(profile[j]-profile[j-1],profile[j],emodel[t].pe[MIN(ctx[1][j][t],emodel[t].lmax)],0);
+            }
+
+          ps = perror[i][SELF][DROP] * perror[j][SELF][GAIN];
+          po = perror[i][OTHERS][DROP] * perror[j][OTHERS][GAIN];
 
 #ifdef DEBUG_ERROR
       fprintf(stderr,"  @ j = %d (t = %d, m = %d, n = %d): %d -> %d\n",j,t,m,n,profile[j-1],profile[j]);
@@ -494,6 +507,16 @@ static void check_drop(int i, uint16 *profile, int plen, Seq_Ctx *ctx[2], Error_
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
 #endif
+        }
+
+      if (max_p[0] < ps)
+        { max_p[0] = ps;
+          max_j[0] = j;
+        }
+      if (max_p[1] < po)
+        { max_p[1] = po;
+          max_j[1] = j;
+        }
     }
 
   for (int e = SELF; e <= OTHERS; e++)
@@ -536,6 +559,7 @@ static void check_gain(int i, uint16 *profile, Seq_Ctx *ctx[2], Error_Model *emo
       ps = perror[j][SELF][DROP] * perror[i][SELF][GAIN] * pe;
       po = perror[j][OTHERS][DROP] * perror[i][OTHERS][GAIN] * pe;
       // TODO: check p_diff (i.e. Skellam)?
+      // TODO: Multiply Pr(read start)^(# of count differences)?
 
       if (max_p[0] < ps)
         { max_p[0] = ps;
@@ -564,36 +588,48 @@ static void check_gain(int i, uint16 *profile, Seq_Ctx *ctx[2], Error_Model *emo
     { m = ctx[1][i][t];
       if (m == 0)
         continue;
+
+      int flag_of = 0;
       n = 0;
-      while (ctx[1][i-(t+1)*(n+1)][t] == m+n+1)
-        n++;
-      m *= t+1;
-      n *= t+1;
+      while (1)
+        { int idx = i-(t+1)*(n+1);
+          if (idx < 0)
+            { flag_of = 1;
+              break;
+            }
+          if (ctx[1][idx][t] != m+n+1)
+            break;
+          n++;
+        }
+      
+      if (flag_of)
+        { ps = perror[i][SELF][GAIN] * perror[i][SELF][GAIN];
+          po = perror[i][OTHERS][GAIN] * perror[i][OTHERS][GAIN];
 
-      j = ipk-n+m;
-      if (j < 0)
-        continue;
-
-      if (profile[j-1]<profile[j])
-        { perror[j][SELF][DROP] = 0.;
-          perror[j][OTHERS][DROP] = 1.;
+#ifdef DEBUG
+          fprintf(stderr,"Gain ctx overflow!\n");
+#endif
+          continue;   // TODO: special treatment instaed of skip?
         }
       else
-        { perror[j][SELF][DROP] = binom_test_g(profile[j],profile[j-1],emodel[t].pe[ctx[0][j][t]],0);
-          perror[j][OTHERS][DROP] = binom_test_g(profile[j-1]-profile[j],profile[j-1],emodel[t].pe[ctx[0][j][t]],0);
-        }
+        { m *= t+1;
+          n *= t+1;
 
-      ps = perror[j][SELF][DROP] * perror[i][SELF][GAIN];
-      po = perror[j][OTHERS][DROP] * perror[i][OTHERS][GAIN];
+          j = ipk-n+m;
+          if (j <= 0)
+            continue;
 
-      if (max_p[0] < ps)
-        { max_p[0] = ps;
-          max_j[0] = j;
-        }
-      if (max_p[1] < po)
-        { max_p[1] = po;
-          max_j[1] = j;
-        }
+          if (profile[j-1]<profile[j])
+            { perror[j][SELF][DROP] = 0.;
+              perror[j][OTHERS][DROP] = 1.;
+            }
+          else
+            { perror[j][SELF][DROP] = binom_test_g(profile[j],profile[j-1],emodel[t].pe[MIN(ctx[0][j][t],emodel[t].lmax)],0);
+              perror[j][OTHERS][DROP] = binom_test_g(profile[j-1]-profile[j],profile[j-1],emodel[t].pe[MIN(ctx[0][j][t],emodel[t].lmax)],0);
+            }
+
+          ps = perror[j][SELF][DROP] * perror[i][SELF][GAIN];
+          po = perror[j][OTHERS][DROP] * perror[i][OTHERS][GAIN];
 
 #ifdef DEBUG_ERROR
       fprintf(stderr,"  @ j = %d (t = %d, m = %d, n = %d): %d -> %d\n",j,t,m,n,profile[j-1],profile[j]);
@@ -606,6 +642,16 @@ static void check_gain(int i, uint16 *profile, Seq_Ctx *ctx[2], Error_Model *emo
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
 #endif
+        }
+
+      if (max_p[0] < ps)
+        { max_p[0] = ps;
+          max_j[0] = j;
+        }
+      if (max_p[1] < po)
+        { max_p[1] = po;
+          max_j[1] = j;
+        }
     }
 
   for (int e = SELF; e <= OTHERS; e++)
@@ -680,14 +726,16 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
 
   int THRES_R = 1000;   // TODO: calc from D-depth or seed selection
 
-  eidx = 0;
-  for (int i = 1; i < plen; i++)
-    { for (e = SELF; e <= OTHERS; e++)
+  for (int i = 0; i < plen; i++)
+    { asgn[i] = 0;
+      for (e = SELF; e <= OTHERS; e++)
         for (w = DROP; w <= GAIN; w++)
           perror[i][e][w] = cerror[i][e][w] = 0.;
-      asgn[i] = 0;
-      
-      w = (profile[i-1] >= profile[i]) ? DROP : GAIN;
+    }
+
+  eidx = 0;
+  for (int i = 1; i < plen; i++)
+    { w = (profile[i-1] >= profile[i]) ? DROP : GAIN;
       cng = abs((int)profile[i-1]-(int)profile[i]);
 
       if (w == DROP)
@@ -702,9 +750,7 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
       maxt = -1, maxl = -1;
       maxpe = 0.;
       for (int t = HP; t <= TS; t++)
-        { int length = ctx[w][i][t];
-          if (length > emodel[t].lmax)
-            length = emodel[t].lmax;
+        { int length = MIN(ctx[w][i][t],emodel[t].lmax);
           pe = emodel[t].pe[length];
           if (maxpe < pe)
             { maxpe = pe;
@@ -763,9 +809,7 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
                     continue;
                   maxpe = 0.;
                   for (int t = 0; t < 3; t++)
-                    { int length = ctx[1-w][j][t];
-                      if (length > emodel[t].lmax)
-                        length = emodel[t].lmax;
+                    { int length = MIN(ctx[1-w][j][t],emodel[t].lmax);
                       pe = emodel[t].pe[length];
                       if (maxpe < pe)
                         { maxpe = pe;
@@ -788,13 +832,11 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
           else
             { for (int n = 0; n <= MAX_N_HC; n++)
                 { int j = i+1-K-n;
-                  if (j < plen || profile[j-1]<profile[j])
+                  if (j <= 0 || profile[j-1]<profile[j])
                     continue;
                   maxpe = 0.;
                   for (int t = 0; t < 3; t++)
-                    { int length = ctx[1-w][j][t];
-                      if (length > emodel[t].lmax)
-                        length = emodel[t].lmax;
+                    { int length = MIN(ctx[1-w][j][t],emodel[t].lmax);
                       pe = emodel[t].pe[length];
                       if (maxpe < pe)
                         { maxpe = pe;
@@ -878,7 +920,7 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
         asgn[j] = 1;
 
   ridx = 0;
-  for (int i = 0; i <= N; i++)
+  for (int i = 0; i < N; i++)
     { int beg = wall[i];
       int end = wall[i+1];
       if (end-beg >= K && asgn[beg] == 0 && asgn[end-1] == 0)
@@ -888,7 +930,7 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
           double logp_sk = logp_skellam(ci-cj,_lambda);
 
 #ifdef DEBUG_INTVL
-  fprintf(stderr,"(%d,%d) [%d, %d] %lf, %lf",beg,end,ci,cj,logp_sk,exp(logp_sk));
+          fprintf(stderr,"(%d,%d) [%d, %d] %lf",beg,end,ci,cj,exp(logp_sk));
 #endif
 
           if (logp_sk >= -9.21)   // 0.0001
@@ -921,9 +963,7 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
                       maxt = -1, maxl = -1;
                       maxpe = 0.;
                       for (int t = HP; t <= TS; t++)
-                        { int length = ctx[w][beg][t];
-                          if (length > emodel[t].lmax)
-                            length = emodel[t].lmax;
+                        { int length = MIN(ctx[w][beg][t],emodel[t].lmax);
                           pe = emodel[t].pe[length];
                           if (maxpe < pe)
                             { maxpe = pe;
@@ -954,9 +994,7 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
                       maxt = -1, maxl = -1;
                       maxpe = 0.;
                       for (int t = HP; t <= TS; t++)
-                        { int length = ctx[w][end][t];
-                          if (length > emodel[t].lmax)
-                            length = emodel[t].lmax;
+                        { int length = MIN(ctx[w][end][t],emodel[t].lmax);
                           pe = emodel[t].pe[length];
                           if (maxpe < pe)
                             { maxpe = pe;
@@ -1113,7 +1151,7 @@ static void pmm_vi(uint16 *profile, int plen, double *hcov, double *dcov)
       return;
     }
     
-  double *eta = Malloc(2*N*sizeof(double),"");
+  double eta[2*N];
   double a[2], b[2], alpha[2], lambda[2];
   int    is_converged;
 
@@ -1792,7 +1830,7 @@ static void *kmer_class_thread(void *arg)
   }
 
 #ifdef DEBUG_SMALL
-  for (int id = data->beg; id < data->beg+100; id++)
+  for (int id = data->beg; id < data->beg+30; id++)
 #else
   for (int id = data->beg; id < data->end; id++)
 #endif
@@ -1855,12 +1893,12 @@ static void *kmer_class_thread(void *arg)
 #endif*/
 
       // Output binary to DAZZ track
-      int l = plen + Km1;
+      /*int l = plen + Km1;
       Compress_Read(l,track);
       int t = COMPRESSED_LEN(l);
       fwrite(track,1,t,dfile);
       idx += t;
-      fwrite(&idx,sizeof(int64),1,afile);
+      fwrite(&idx,sizeof(int64),1,afile);*/
     }
 
 #ifdef DEBUG_MERGE
@@ -1872,15 +1910,18 @@ static void *kmer_class_thread(void *arg)
   fclose(dfile);
 
   free(track-1);
+  free(seq-1);
   free(profile);
-  free(wall);
-  free(asgn);
   free(_lctx);
   free(rctx);
   free(perror);
+  free(cerror);
   for (int i = SELF; i <= OTHERS; i++)
     free(eintvl[i]);
-
+  free(rintvl);
+  free(wall);
+  free(asgn);
+  
   return (NULL);
 }
 
@@ -2021,10 +2062,13 @@ static void merge_output(Class_Arg *data, int NTHREADS)
 #endif
 
 int main(int argc, char *argv[])
-{ Profile_Index *P;
+{ char          *path, *root;
+  Profile_Index *P;
   DAZZ_DB        _db, *db = &_db;
-  char          *path, *root;
   Error_Model   *emodel;
+
+  THREAD        *threads;
+  Class_Arg     *paramc;
 
   int NTHREADS;
   int NPARTS;
@@ -2128,8 +2172,8 @@ int main(int argc, char *argv[])
   }
 
   // Classification in parallel
-  { THREAD    *threads = Malloc(sizeof(THREAD)*NTHREADS,"Allocating class threads");
-    Class_Arg *paramc  = Malloc(sizeof(Class_Arg)*NTHREADS,"Allocating class args");
+  { threads = Malloc(sizeof(THREAD)*NTHREADS,"Allocating class threads");
+    paramc  = Malloc(sizeof(Class_Arg)*NTHREADS,"Allocating class args");
 
     for (int t = 0; t < NTHREADS; t++)
       { paramc[t].P      = (t == 0) ? P : Clone_Profiles(P);
@@ -2153,25 +2197,23 @@ int main(int argc, char *argv[])
     for (int t = 1; t < NTHREADS; t++)
       pthread_join(threads[t],NULL);
 
-    free(threads);
-
 #ifndef DEBUG_NO_MERGE
-    fprintf(stderr,"Merging files...\n");
+    if (VERBOSE)
+      fprintf(stderr,"Merging files...\n");
     merge_output(paramc,NTHREADS);
 #endif
-
-    for (int t = 0; t < NTHREADS; t++)
-      { free(paramc[t].afname);
-        free(paramc[t].dfname);
-      }
-    free(paramc);
   }
 
-  { free(path);
+  { for (int t = NTHREADS-1; t >= 0; t--)
+      { free(paramc[t].afname);
+        free(paramc[t].dfname);
+        Free_Profiles(paramc[t].P);
+      }
+    free(paramc);
+    free(threads);
+    free(path);
     free(root);
     free_emodel(emodel);
-
-    Free_Profiles(P);
     Close_DB(db);
 
     Catenate(NULL,NULL,NULL,NULL);
