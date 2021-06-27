@@ -1,10 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
 #include <limits.h>
 #include <float.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <sys/stat.h>
 
@@ -12,11 +14,13 @@
 #include "DB.h"
 #include "bessel.h"
 
-#define DEBUG
-#define DEBUG_SMALL
-#define DEBUG_NO_MERGE
-#define DEBUG_ITER
+#define DUP_PROFILE
+#define PARALLEL_WRITE
 
+#define DEBUG
+#undef DEBUG_NO_MERGE 
+#undef DEBUG_SMALL
+#undef DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_CTX
 #undef DEBUG_ERROR
@@ -26,6 +30,7 @@
 #undef DEBUG_PROB
 #undef DEBUG_REL
 #undef DEBUG_UNREL
+#define DEBUG_SLIP
 #undef DEBUG_MERGE
 
 #define THREAD pthread_t
@@ -196,6 +201,7 @@ static inline double logp_binom_pre(int k, int n, double lpe, double l1mpe)
 { return logfact[n] - logfact[k] - logfact[n-k] + k * lpe + (n-k) * l1mpe;
 }
 
+// TODO: chi-square when k,n are large
 static inline double binom_test_g(int k, int n, double pe, int exact)
 { const double lpe   = log(pe);   // TODO: precompute in error models?
   const double l1mpe = log(1-pe);
@@ -211,7 +217,8 @@ static inline double binom_test_g(int k, int n, double pe, int exact)
   if (decrease)
     { p = p_first = exp(logp_binom_pre(k,n,lpe,l1mpe));
       for (int x = k+1; x <= n; x++)
-        { p += p_curr = exp(logp_binom_pre(x,n,lpe,l1mpe));
+        { p += p_curr = 
+        (logp_binom_pre(x,n,lpe,l1mpe));
           if (exact == 0 && 10 * p_curr < p_first)
             break;
         }
@@ -381,6 +388,8 @@ typedef struct
 typedef struct
   { int    i;
     int    j;
+    bool    is_rel;   // hard assignment of reliable intervals
+    bool    is_err;   // hard assignment of erroneous intervals
     char   asgn;
   } Intvl;
 
@@ -716,7 +725,7 @@ static void correct_wall_cnt(int beg, int end, int *ci, int *cj, uint16 *profile
   return;
 }
 
-static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, P_Error *perror, P_Error *cerror, Error_Intvl *eintvl[N_ETYPE], Rel_Intvl *rintvl, int *wall, char *asgn, const int K, int *_N, int *_M)
+static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, P_Error *perror, P_Error *cerror, Error_Intvl *eintvl[N_ETYPE], Intvl *intvl, Rel_Intvl *rintvl, int *wall, char *asgn, const int K, int *_N, int *_M)
 { int      N;
   int      cng, e, w;
   uint16   cin, cout;
@@ -884,19 +893,23 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
 #endif
 
   // TODO: use wall from the beginning?
+  // Repeat counts cannot be walls
   THRES_R = lambda_prior[1] + 6*(int)sqrt(lambda_prior[1]);
   for (int i = 1; i < plen; i++)
     if (asgn[i] == 1 && MIN(profile[i-1],profile[i]) >= THRES_R)
       asgn[i] = 0;
+  // Exclude walls that can be explained by errors in others
   e = OTHERS;
   for (int i = 0; i < eidx; i++)
     if (eintvl[e][i].pe >= pethres[e])
       asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 0;
+  // Include walls that can be explained by errors in self
   e = SELF;
   for (int i = 0; i < eidx; i++)
     if (eintvl[e][i].pe >= pethres[e])
       asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 1;
 
+  // Wall positions
   N = 0;   // # of intervals (N+1 is the length of `wall`)
   wall[N++] = 0;
   for (int i = 1; i < plen; i++)
@@ -911,6 +924,7 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
   fprintf(stderr,"\n");
 #endif
 
+  // Mask error positions
   for (int i = 1; i < N; i++)
     asgn[wall[i]] = 0;
   e = SELF;
@@ -918,12 +932,21 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
     if (eintvl[e][i].pe >= pethres[e])
       for (int j = eintvl[e][i].i; j < eintvl[e][i].j; j++)
         asgn[j] = 1;
-
+  
+  // Find reliable intervals and correct counts
   ridx = 0;
+  int iidx = 0;
   for (int i = 0; i < N; i++)
     { int beg = wall[i];
       int end = wall[i+1];
-      if (end-beg >= K && asgn[beg] == 0 && asgn[end-1] == 0)
+      bool is_rel = false;
+      bool is_err = false;
+
+      // Reliable intervals must be long and not explained by errors in others
+      if (asgn[beg] == 1 || asgn[end-1] == 1)
+        { is_err = true;
+        }
+      else if (end-beg >= K)
         { int ci, cj;
           correct_wall_cnt(beg,end,&ci,&cj,profile,ctx,K);
           double _lambda = (double)(ci+cj)/2*(end-beg)/20000;
@@ -933,13 +956,15 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
           fprintf(stderr,"(%d,%d) [%d, %d] %lf",beg,end,ci,cj,exp(logp_sk));
 #endif
 
+          // Transition between wall counts can be explained by sampling fluctuation
           if (logp_sk >= -9.21)   // 0.0001
             { 
 #ifdef DEBUG_INTVL
               fprintf(stderr,"   Reliable");
 #endif
               
-              rintvl[ridx].i = beg;
+              is_rel = true;
+              rintvl[ridx].i = beg;   // TODO: change to `b` and `e`?
               rintvl[ridx].j = end;
               rintvl[ridx].ci = ci;
               rintvl[ridx].cj = cj;   // TODO: change to `cjm1`?
@@ -1011,6 +1036,13 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
               fprintf(stderr,"\n");
 #endif
         }
+
+      intvl[iidx].i = beg;
+      intvl[iidx].j = end;
+      intvl[iidx].is_rel = is_rel;
+      intvl[iidx].is_err = is_err;
+      intvl[iidx].asgn = (is_err) ? ERROR : N_STATE;
+      iidx++;
     }
 
   *_N = N;
@@ -1151,7 +1183,7 @@ static void pmm_vi(uint16 *profile, int plen, double *hcov, double *dcov)
       return;
     }
     
-  double eta[2*N];
+  double eta[2*N];   // FIXME: stack overflow
   double a[2], b[2], alpha[2], lambda[2];
   int    is_converged;
 
@@ -1300,20 +1332,42 @@ static void nn_intvl(int idx, Rel_Intvl *rintvl, int M, char s, int s_not, int r
   return;
 }
 
+static void nn_intvl_u(int idx, Intvl *intvl, int N, char s, int s_not, int ret[2])
+{ int p = idx-1;
+  if (s_not)
+    while (p >= 0 && intvl[p].asgn == s)
+      p--;
+  else
+    while (p >= 0 && intvl[p].asgn != s)
+      p--;
+  ret[0] = p;
+
+  int n = idx+1;
+  if (s_not)
+    while (n < N && intvl[n].asgn == s)
+      n++;
+  else
+    while (n < N && intvl[n].asgn != s)
+      n++;
+  ret[1] = n;
+
+  return;
+}
+
 static const int N_BASE_EST = 1000;
 static const int N_BASE_EST_MIN = 1;
 static const int N_INTVL_EST = 5;
 static const int N_INTVL_EST_MIN = 1;
 
-static void est_cnt(int idx, Rel_Intvl *rintvl, int M, char s, uint16* profile, int ret[2])
+static void est_cnt_base(int idx, Intvl *intvl, int N, char s, uint16* profile, int ret[2])
 { int l, csum;
 
   l = N_BASE_EST;   // TODO: change to l=0 -> N_BASE_EST
   csum = 0;
   int p = idx-1;
   while (p >= 0 && l > 0) {
-    if (rintvl[p].asgn == s)
-      for (int j = rintvl[p].j-1; j >= rintvl[p].i && l > 0; j--, l--)
+    if (intvl[p].asgn == s)
+      for (int j = intvl[p].j-1; j >= intvl[p].i && l > 0; j--, l--)
         csum += profile[j];
     p--;
   }
@@ -1325,16 +1379,16 @@ static void est_cnt(int idx, Rel_Intvl *rintvl, int M, char s, uint16* profile, 
   l = N_BASE_EST;
   csum = 0;
   int n = idx+1;
-  while (n < M && l > 0) {
-    if (rintvl[n].asgn == s)
-      for (int j = rintvl[n].i; j < rintvl[n].j && l > 0; j++, l--)
+  while (n < N && l > 0) {
+    if (intvl[n].asgn == s)
+      for (int j = intvl[n].i; j < intvl[n].j && l > 0; j++, l--)
         csum += profile[j];
     n++;
   }
   if (l > N_BASE_EST-N_BASE_EST_MIN)
     ret[1] = -1;
   else
-    ret[0] = csum/(N_BASE_EST-l);
+    ret[1] = csum/(N_BASE_EST-l);
 
   return;
 }
@@ -1366,6 +1420,45 @@ static void est_cnt_intvl(int idx, Rel_Intvl *rintvl, int M, char s, int ret[2])
     { if (rintvl[i].asgn == s)
         { csum += (rintvl[i].j-rintvl[i].i)*(rintvl[i].ci+rintvl[i].cj)/2;
           lsum += rintvl[i].j-rintvl[i].i;
+          nadd++;
+        }
+      i++;
+    }
+  if (nadd < N_INTVL_EST_MIN)
+    ret[1] = -1;
+  else
+    ret[1] = csum/lsum;
+
+  return;
+}
+
+static void est_cnt_intvl_u(int idx, Intvl *intvl, int N, uint16 *profile, char s, int ret[2])
+{ int csum, lsum;
+  int nadd, i;
+
+  csum = lsum = 0;
+  i = idx-1;
+  nadd = 0;
+  while (i >= 0 && nadd < N_INTVL_EST)
+    { if (intvl[i].asgn == s)
+        { csum += (intvl[i].j-intvl[i].i)*(profile[intvl[i].i]+profile[intvl[i].j-1])/2;
+          lsum += intvl[i].j-intvl[i].i;
+          nadd++;
+        }
+      i--;
+    }
+  if (nadd < N_INTVL_EST_MIN)
+    ret[0] = -1;
+  else
+    ret[0] = csum/lsum;
+
+  csum = lsum = 0;
+  i = idx+1;
+  nadd = 0;
+  while (i < N && nadd < N_INTVL_EST)
+    { if (intvl[i].asgn == s)
+        { csum += (intvl[i].j-intvl[i].i)*(profile[intvl[i].i]+profile[intvl[i].j-1])/2;
+          lsum += intvl[i].j-intvl[i].i;
           nadd++;
         }
       i++;
@@ -1498,7 +1591,7 @@ static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *ce
     { double _lambda = (double)cov[s]*(ri.i-rintvl[p].j+1)/READ_LEN;
       logp_sf = logp_skellam(ri.ci-rintvl[p].cj,_lambda);
       if (rintvl[p].j == ri.i)
-        logp_er = log(MAX(cerror[ri.i][OTHERS][DROP],cerror[ri.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
+        logp_er = log(MIN(cerror[ri.i][OTHERS][DROP],cerror[ri.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
       else
         logp_er = -INFINITY;
       logp_l = MAX(logp_sf,logp_er);
@@ -1511,7 +1604,7 @@ static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *ce
     { double _lambda = (double)cov[s]*(rintvl[n].i-ri.j+1)/READ_LEN;
       logp_sf = logp_skellam(rintvl[n].ci-ri.cj,_lambda);
       if (ri.j == rintvl[n].i)
-        logp_er = log(MAX(cerror[ri.j][OTHERS][DROP],cerror[ri.j][OTHERS][GAIN]));
+        logp_er = log(MIN(cerror[ri.j][OTHERS][DROP],cerror[ri.j][OTHERS][GAIN]));
       else
         logp_er = -INFINITY;
       logp_r = MAX(logp_sf,logp_er);
@@ -1645,7 +1738,7 @@ static int compare_iic(const void *a, const void *b)
 { return ((Intvl_IC*)a)->cnt - ((Intvl_IC*)b)->cnt;
 }
 
-static void classify_reliable(int plen, Rel_Intvl *rintvl, int M, P_Error *perror, P_Error *cerror, int hcov, int dcov)
+static void classify_reliable(Rel_Intvl *rintvl, int M, Intvl *intvl, int N, int plen, P_Error *perror, P_Error *cerror, int hcov, int dcov)
 { int cov[N_STATE] = {1, dcov+6*(int)sqrt(dcov), hcov, dcov};
 
   // Initial assignment
@@ -1715,6 +1808,364 @@ static void classify_reliable(int plen, Rel_Intvl *rintvl, int M, P_Error *perro
   fflush(stderr);
 #endif
 
+  // Copy assignments to `intvl`
+  for (int ridx = 0, iidx = 0; ridx < M; ridx++, iidx++)
+    { while (iidx < N && intvl[iidx].is_rel == 0)
+        iidx++;
+      if (iidx >= N || rintvl[ridx].i != intvl[iidx].i || rintvl[ridx].j != intvl[iidx].j)
+        { fprintf(stderr,"Inconsistent reliable interval (%d,%d) != (%d,%d)\n",rintvl[ridx].i,rintvl[ridx].j,intvl[iidx].i,intvl[iidx].j);
+          exit(1);
+        }
+      intvl[iidx].asgn = rintvl[ridx].asgn;
+    }
+
+  return;
+}
+
+static double calc_logp_e_u(int idx, Intvl *intvl, uint16 *profile, int plen, P_Error *perror, int cov[])
+{ Intvl I = intvl[idx];
+  double logp_l, logp_r;
+  double logp_po, logp_er;
+  
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"  [ERROR]\n");
+#endif
+
+  logp_po = logp_poisson(profile[I.i],cov[ERROR]);
+  logp_er = -INFINITY;
+  if (I.i > 0)
+    logp_er = log(perror[I.i][SELF][DROP]);
+  logp_l = MAX(logp_po,logp_er);
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"    [L] logp(PO)=%lf, logp(ER)=%lf\n",logp_po,logp_er);
+#endif
+
+  logp_po = logp_poisson(profile[I.j-1],cov[ERROR]);
+  logp_er = -INFINITY;
+  if (I.j < plen)
+    logp_er = log(perror[I.j][SELF][GAIN]);
+  logp_r = MAX(logp_po,logp_er);
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"    [R] logp(PO)=%lf, logp(ER)=%lf\n",logp_po,logp_er);
+#endif
+
+  return logp_l+logp_r;
+}
+
+static const double N_SIGMA_R_U = 1;
+
+static double calc_logp_r_u(int idx, Intvl *intvl, int N, uint16 *profile, int cov[])
+{ Intvl I = intvl[idx];
+  double logp_l, logp_r;
+  double logp_sf, logp_er;
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"  [REPEAT]\n");
+#endif
+
+  if (MAX(profile[I.i],profile[I.j-1]) >= cov[REPEAT])
+    { 
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+      fprintf(stderr,"    Larger than R-cov\n");
+#endif
+      return 0.;
+    }
+
+  int est_cnt[2];
+  est_cnt_base(idx,intvl,N,DIPLO,profile,est_cnt);
+  int pc = est_cnt[0];
+  int nc = est_cnt[1];
+  if (pc == -1 && nc == -1)
+    { est_cnt_base(idx,intvl,N,HAPLO,profile,est_cnt);
+      pc = est_cnt[0];
+      nc = est_cnt[1];
+      if (pc == -1 && nc == -1)
+        pc = nc = cov[DIPLO];
+      else if (pc == -1)
+        pc = nc;
+      else if (nc == -1)
+        nc = pc;
+    }
+  else if (pc == -1)
+    pc = nc;
+  else if (nc == -1)
+    nc = pc;
+
+  double dr_ratio = 1.+N_SIGMA_R_U*(1./sqrt(cov[DIPLO]));
+  pc = (int)((double)pc*dr_ratio);
+  nc = (int)((double)nc*dr_ratio);
+
+  if (pc <= profile[I.i] || profile[I.j-1] >= nc)
+    return 0.;
+
+  /*double _lambda;
+  _lambda = (double)pc*(ri.i-pe+1)/READ_LEN;
+  logp_sf = logp_skellam(ri.ci-pc,_lambda);*/
+  logp_sf = -INFINITY;
+  logp_er = (pc > profile[I.i]) ? logp_binom(profile[I.i],pc,1-0.01) : -INFINITY;   // TODO: binom test? use ctx
+  logp_l = MAX(logp_sf,logp_er);
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"    [L] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+#endif
+
+  /*_lambda = (double)nc*(nb-ri.i+1)/READ_LEN;
+  logp_sf = logp_skellam(nc-ri.cj,_lambda);*/
+  logp_sf = -INFINITY;
+  logp_er = (profile[I.j-1] < nc) ? logp_binom(profile[I.j-1],nc,1-0.01) : -INFINITY; 
+  logp_r = MAX(logp_sf,logp_er);
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"    [R] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+#endif
+
+  //return MAX(logp_l,logp_r);
+  return logp_l+logp_r;
+}
+
+static double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
+{ Intvl I = intvl[idx];
+  double logp_l = -INFINITY, logp_r = -INFINITY;
+  double logp_sf, logp_er;
+
+  int nn_idx[2];
+  nn_intvl_u(idx,intvl,N,s,0,nn_idx);
+  int p = nn_idx[0];
+  int n = nn_idx[1];
+
+  if (p >= 0)
+    { double _lambda = (double)cov[s]*(I.i-intvl[p].j+1)/READ_LEN;
+      logp_sf = logp_skellam(profile[I.i]-profile[intvl[p].j-1],_lambda);
+      if (intvl[p].j == I.i)
+        logp_er = log(MIN(perror[I.i][OTHERS][DROP],perror[I.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
+      else
+        logp_er = -INFINITY;
+      logp_l = MAX(logp_sf,logp_er);
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"    [L] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+#endif
+    }
+  if (n < N)
+    { double _lambda = (double)cov[s]*(intvl[n].i-I.j+1)/READ_LEN;
+      logp_sf = logp_skellam(profile[intvl[n].i]-profile[I.j-1],_lambda);
+      if (I.j == intvl[n].i)
+        logp_er = log(MIN(perror[I.j][OTHERS][DROP],perror[I.j][OTHERS][GAIN]));
+      else
+        logp_er = -INFINITY;
+      logp_r = MAX(logp_sf,logp_er);
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"    [R] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+#endif
+    }
+
+  if (p < 0 && n >= N)   // TODO: allow short, isolated intervals to be H/D?
+    { logp_l = logp_poisson(profile[I.i],cov[s]);
+      logp_r = logp_poisson(profile[I.j-1],cov[s]);
+    }
+  else if (p < 0)
+    logp_l = logp_r;
+  else if (n >= N)
+    logp_r = logp_l;
+
+  //return MIN(logp_l,logp_r);
+  return MAX(logp_l,logp_r);
+}
+
+static double calc_logp_h_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
+{ Intvl I = intvl[idx];
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"  [HAPLO]\n");
+#endif
+
+  int est_cnt[2];
+  est_cnt_intvl_u(idx,intvl,N,profile,DIPLO,est_cnt);
+  int pc = (int)((double)est_cnt[0]/1.25);   // TODO: change to N-sigma
+  int nc = (int)((double)est_cnt[1]/1.25);
+
+  if (pc > 0 && pc <= profile[I.i])
+    return -INFINITY;
+  if (nc > 0 && nc <= profile[I.j-1])
+    return -INFINITY;
+
+  // TODO: NN H-interval + N-sigma check?
+
+  return calc_logp_hd_u(HAPLO,idx,intvl,N,profile,perror,cov);
+}
+
+static double calc_logp_d_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
+{ Intvl I = intvl[idx];
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+  fprintf(stderr,"  [DIPLO]\n");
+#endif
+ 
+  int est_cnt[2];
+  est_cnt_intvl_u(idx,intvl,N,profile,HAPLO,est_cnt);
+  int pc = (int)((double)est_cnt[0]*1.25);   // TODO: change to N-sigma
+  int nc = (int)((double)est_cnt[1]*1.25);
+
+  if (pc < 0 && nc < 0)
+    pc = nc = (int)((double)cov[HAPLO]*1.25);
+  else if (pc < 0)
+   pc = nc;
+  else if (nc < 0)
+   nc = pc;
+  
+  if (profile[I.i] < pc && profile[I.j-1] < nc)
+    return -INFINITY;
+
+  return calc_logp_hd_u(DIPLO,idx,intvl,N,profile,perror,cov);
+}
+
+static void update_state_u(int idx, Intvl *intvl, int N, uint16 *profile, int plen, P_Error *perror, int cov[])
+{ char   s, smax = N_STATE;
+  double logp, logpmax = -INFINITY;
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+      fprintf(stderr,"idx=%d (%d,%d)\n",idx,intvl[idx].i,intvl[idx].j);
+#endif
+
+  for (s = ERROR; s <= DIPLO; s++)
+    { if (s == ERROR)
+        logp = calc_logp_e_u(idx,intvl,profile,plen,perror,cov);
+      else if (s == REPEAT)
+        logp = calc_logp_r_u(idx,intvl,N,profile,cov);
+      else if (s == HAPLO)
+        logp = calc_logp_h_u(idx,intvl,N,profile,perror,cov);
+      else
+        logp = calc_logp_d_u(idx,intvl,N,profile,perror,cov);
+
+      if (logp > logpmax)
+        { smax = s;
+          logpmax = logp;
+        }
+
+#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
+      fprintf(stderr,"idx=%d (%d,%d), s=%d, logp=%lf\n",idx,intvl[idx].i,intvl[idx].j,s,logp);
+#endif
+    }
+
+#ifdef DEBUG
+  if (smax >= N_STATE)
+    { fprintf(stderr,"No valid probability for interval %d\n",idx);
+      exit(1);
+    }
+#endif
+
+  if (intvl[idx].asgn != smax)
+    {
+#ifdef DEBUG_UNREL
+      fprintf(stderr,"state updated @ %d: %d -> %d\n",idx,intvl[idx].asgn,smax);
+#endif
+
+      intvl[idx].asgn = smax;
+    }
+
+  return;
+}
+
+static const double MIN_P_NORMAL= 0.1;   // min percentage of bases in reliable H/D intervals
+
+static void classify_unreliable(uint16 *profile, int plen, Intvl *intvl, int N, P_Error *perror, int hcov, int dcov)
+{ int cov[N_STATE] = {1, dcov+6*(int)sqrt(dcov), hcov, dcov};
+
+  // Check density of reliable H/D bases
+  int rel_hd = 0;
+  for (int i = 0; i < N; i++)
+    { if (intvl[i].is_rel && (intvl[i].asgn == HAPLO || intvl[i].asgn == DIPLO))
+        rel_hd += intvl[i].j - intvl[i].i;
+    }
+  double pnorm = (double)rel_hd/plen;
+  if (pnorm < MIN_P_NORMAL)
+    { 
+#ifdef DEBUG_UNREL
+      fprintf(stderr,"Too few reliable H/D bases.\n");
+#endif
+      
+      for (int i = 0; i < N; i++)
+        if (!intvl[i].is_rel && !intvl[i].is_err)
+            intvl[i].asgn = REPEAT;
+
+      return;
+    }
+  
+  // Assignment
+  Intvl_IC iord[N];
+  for (int i = 0; i < N; i++)
+    { iord[i].idx = i;
+      iord[i].cnt = MIN(profile[intvl[i].i],profile[intvl[i].j-1]);
+    }
+  qsort(iord,N,sizeof(Intvl_IC),compare_iic);
+  
+  for (int i = N-1; i >= 0; i--)
+    if (!intvl[iord[i].idx].is_rel && !intvl[iord[i].idx].is_err)
+      update_state_u(iord[i].idx,intvl,N,profile,plen,perror,cov);
+
+  for (int i = 0; i < N; i++)
+    if (!intvl[iord[i].idx].is_rel && !intvl[iord[i].idx].is_err)
+      update_state_u(iord[i].idx,intvl,N,profile,plen,perror,cov);
+
+#ifdef DEBUG_ITER
+  fprintf(stderr,"         ");
+  for (int i = 0; i < N; i++)
+    { if (!intvl[i].is_rel && !intvl[i].is_err)
+        fprintf(stderr,"+");
+      else
+        fprintf(stderr," ");
+    }
+  fprintf(stderr,"\n  Intvl: ");
+  for (int i = 0; i < N; i++)
+    fprintf(stderr,"%c",stoc[(unsigned char)intvl[i].asgn]);
+  fprintf(stderr,"\n");
+  fflush(stderr);
+#endif
+
+  return;
+}
+
+// TODO: debug; make it work
+static void remove_slip(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], char *crack)
+{ int b, cnt, prev_d;
+  bool in_hp;   // TODO: extend to DS/TS?
+  char new_s;
+
+  b = 0;
+  cnt = 0;
+  prev_d = -1;
+  for (int i = 1; i < plen; i++)
+    { int d = (profile[i-1] >= profile[i]) ? DROP : GAIN;
+      if (d == DROP)
+        in_hp = (ctx[d][i-1][HP] < ctx[d][i][HP]) ? true : false;
+      else
+        in_hp = (ctx[d][i-1][HP] > ctx[d][i][HP]) ? true : false;
+      if (!in_hp || prev_d != d)
+        { cnt = 0;
+          continue;
+        }
+      if (crack[i-1] != crack[i])
+        { cnt++;
+          if (cnt == 1)
+            b = i;
+          else if (cnt >= 2)
+            { if (d == DROP)
+                new_s = (MIN(crack[i-1],crack[i]) == ERROR) ? ERROR : crack[i-1];
+              else
+                new_s = (MIN(crack[b-1],crack[b]) == ERROR) ? ERROR : crack[b];
+#ifdef DEBUG_SLIP
+              fprintf(stderr,"SLIP: [%d,%d) -> %c\n",b,i,stoc[(unsigned char)new_s]);
+#endif
+              for (int j = b; j < i; j++)
+                crack[j] = new_s;
+            }
+        }
+      prev_d = d;
+    }
+
   return;
 }
 
@@ -1744,6 +2195,7 @@ typedef struct
     char          *afname;   // .class.anno.#
     char          *dfname;   // .class.data.#
     int            wch;      // Thread ID
+    FILE          *cfile;
     int            beg;      // Reads in [beg,end) are classified in this thread
     int            end;
   } Class_Arg;
@@ -1760,6 +2212,7 @@ static void *kmer_class_thread(void *arg)
   char    *track, *crack;         // Data for dfile (crack = track + km1)
   int64    idx;                   // Data for afile
 
+  DAZZ_READ   *r;
   char        *seq;                   // Fetched sequence of the read
   uint16      *profile;               // Fetched profile of a read
   int          rlen, plen;            // `rlen` = `plen` + `Km1`
@@ -1767,10 +2220,27 @@ static void *kmer_class_thread(void *arg)
   Seq_Ctx     *lctx, *_lctx, *rctx;
   P_Error     *perror, *cerror;       // Error probability per position
   Error_Intvl *eintvl[N_ETYPE];
+  Intvl       *intvl;
   Rel_Intvl   *rintvl;
   int          N, M;                  // Number of walls/reliable intervals
   int         *wall;                  // Wall positions
   char        *asgn;                  // Interval classifications
+
+#ifdef PARALLEL_WRITE
+  FILE       *cfile = data->cfile;
+  DAZZ_STUB  *stub;
+  char      **flist;
+  int        *findx;
+  int         map;
+  char       *buf = Malloc((db->maxlen+1)*sizeof(char),"buf");
+  sprintf(buf,"%s/%s.db",data->path,data->root);
+
+  stub      = Read_DB_Stub(buf,DB_STUB_NREADS|DB_STUB_PROLOGS);
+  flist     = stub->prolog;
+  findx     = stub->nreads;
+  findx[-1] = 0;
+  map       = 0;
+#endif
 
 #ifdef DEBUG_MERGE
   fprintf(stderr,"beg=%d,end=%d @thread %d\n",data->beg,data->end,data->wch);
@@ -1808,6 +2278,7 @@ static void *kmer_class_thread(void *arg)
     for (int i = 0; i < Km1; i++)
       track[i] = 0;
 
+    intvl    = Malloc(db->maxlen*sizeof(Intvl),"Interval array");
     rintvl   = Malloc(db->maxlen*sizeof(Rel_Intvl),"Reliable interval array");
     wall     = Malloc(db->maxlen*sizeof(int),"Wall array");
     asgn     = Malloc(db->maxlen*sizeof(char),"Interval assignment array");
@@ -1830,18 +2301,19 @@ static void *kmer_class_thread(void *arg)
   }
 
 #ifdef DEBUG_SMALL
-  for (int id = data->beg; id < data->beg+30; id++)
+  for (int id = data->beg; id < data->beg+1000; id++)
 #else
   for (int id = data->beg; id < data->end; id++)
 #endif
-    { rlen = db->reads[id].rlen;
+    { r = db->reads+id;
+      rlen = r->rlen;
 
 #if defined(DEBUG) || defined(DEBUG_CTX) || defined(DEBUG_ERROR) || defined(DEBUG_ITER)
       fprintf(stderr,"\nRead %d (%d bp): ",id+1,rlen);
       fflush(stderr);
 #endif
 
-      Load_Read(db,id,seq,1);
+      Load_Read(db,id,seq,2);   // TODO: OK to use mode `2` (capital)?
 
 #ifdef DEBUG
       if (rlen != (int)strlen(seq))
@@ -1863,13 +2335,13 @@ static void *kmer_class_thread(void *arg)
           exit(1);
         }
 
-      find_wall(profile,plen,ctx,emodel,perror,cerror,eintvl,rintvl,wall,asgn,K,&N,&M);
+      find_wall(profile,plen,ctx,emodel,perror,cerror,eintvl,intvl,rintvl,wall,asgn,K,&N,&M);
 
 #ifdef DEBUG_ITER
       int rtot = 0;
       for (int i = 0; i < M; i++)
         rtot += rintvl[i].j - rintvl[i].i;
-      fprintf(stderr,"%d walls, %d rel intvls (%d %%), ",N,M,(int)(100*rtot/plen));
+      fprintf(stderr,"%d walls, %d rel intvls (%d %%), ",N-1,M,(int)(100*rtot/plen));
 #endif
 
       double hcov, dcov;
@@ -1879,11 +2351,14 @@ static void *kmer_class_thread(void *arg)
       fprintf(stderr,"(H,D)=(%.lf,%.lf)\n",hcov,dcov);
 #endif
 
-      classify_reliable(plen,rintvl,M,perror,cerror,(int)hcov,(int)dcov);
-      //classify_unreliable(profile,plen,rintvl,M,perror,cerror,hcov,dcov);
+      classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,(int)hcov,(int)dcov);
+      classify_unreliable(profile,plen,intvl,N,perror,(int)hcov,(int)dcov);
 
-      // TODO: Convert interval assignment to per-base assignment
-      //remove_slip()
+      for (int i = 0; i < N; i++)
+        for (int j = intvl[i].i; j < intvl[i].j; j++)
+          crack[j] = intvl[i].asgn;
+
+      remove_slip(profile,plen,ctx,crack);
 
 /*#ifdef DEBUG_ITER
       fprintf(stderr,"  Final: ");
@@ -1892,13 +2367,29 @@ static void *kmer_class_thread(void *arg)
       fflush(stderr);
 #endif*/
 
+#if defined(PARALLEL_WRITE) && !defined(DEBUG_NO_MERGE)
+      while (id < findx[map-1])
+        map -= 1;
+      while (id >= findx[map])
+        map += 1;
+
+      int bufidx = 0;
+      for (int i = 0; i < Km1; i++)
+        buf[bufidx++] = 'N';
+      for (int i = 0; i < plen; i++)
+        buf[bufidx++] = stoc[(unsigned char)crack[i]];
+      buf[bufidx] = '\0';
+
+      fprintf(cfile,"@%s/%d/%d_%d\n%s\n+\n%s\n",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen,seq,buf);
+#endif
+
       // Output binary to DAZZ track
-      /*int l = plen + Km1;
+      int l = plen + Km1;
       Compress_Read(l,track);
       int t = COMPRESSED_LEN(l);
       fwrite(track,1,t,dfile);
       idx += t;
-      fwrite(&idx,sizeof(int64),1,afile);*/
+      fwrite(&idx,sizeof(int64),1,afile);
     }
 
 #ifdef DEBUG_MERGE
@@ -1918,6 +2409,7 @@ static void *kmer_class_thread(void *arg)
   free(cerror);
   for (int i = SELF; i <= OTHERS; i++)
     free(eintvl[i]);
+  free(intvl);
   free(rintvl);
   free(wall);
   free(asgn);
@@ -1926,6 +2418,104 @@ static void *kmer_class_thread(void *arg)
 }
 
 #ifndef DEBUG_NO_MERGE
+#ifdef PARALLEL_WRITE
+static void merge_track(Class_Arg *data, int NTHREADS)
+{ DAZZ_DB    *db   = data[0].db;
+  char       *path = data[0].path;
+  char       *root = data[0].root;
+  
+  char       *afname, *dfname;
+  FILE       *afile, *dfile;
+  FILE       *_afile, *_dfile;
+  char       *track;
+  int64       offset, bidx, eidx;
+  uint32      tsize;
+
+  track = New_Read_Buffer(db);
+
+  // Rename the first temporary files to the final output files
+  { afname = Strdup(Catenate(path,"/.",root,".class.anno"),"Allocating afname");
+    dfname = Strdup(Catenate(path,"/.",root,".class.data"),"Allocating dfname");
+
+    if (rename(data[0].afname,afname) == -1)
+      { fprintf(stderr,"Cannot rename %s -> %s [errno=%d]\n",data[0].afname,afname,errno);
+        exit(1);
+      }
+    if (rename(data[0].dfname,dfname) == -1)
+      { fprintf(stderr,"Cannot rename %s -> %s [errno=%d]\n",data[0].dfname,dfname,errno);
+        exit(1);
+      }
+
+    afile = Fopen(afname,"ab+");
+    dfile = Fopen(dfname,"ab+");
+
+    if (afile == NULL || dfile == NULL)
+      { fprintf(stderr,"Cannot open output file(s) [errno=%d]\n",errno);
+        exit(1);
+      }
+  }
+
+  // Concatenate the temporary files while writing the ASCII file
+  { if (fseek(afile,(long)(sizeof(int)*2+sizeof(int64)),SEEK_SET) == -1)
+      { fprintf(stderr,"Skip header failed @%s [errno=%d]\n",afname,errno);
+        exit(1);
+      }
+
+    offset = bidx = 0;
+    for (int t = 0; t < NTHREADS; t++)
+      { if (t == 0)
+          { _afile = afile;
+            _dfile = dfile;
+          }
+        else
+          { _afile = Fopen(data[t].afname,"rb");
+            _dfile = Fopen(data[t].dfname,"rb");
+            if (_afile == NULL || _dfile == NULL)
+              { fprintf(stderr,"Cannot open intermediate file(s) [errno=%d]\n",errno);
+                exit(1);
+              }
+          }
+
+        for (int id = data[t].beg; id < data[t].end; id++)
+          { fread(&eidx,sizeof(int64),1,_afile);
+            if (t > 0)
+              { eidx += offset;
+                fwrite(&eidx,sizeof(int64),1,afile);
+              }
+            tsize = eidx-bidx;
+            fread(track,1,tsize,_dfile);
+            if (t > 0)
+              fwrite(track,1,tsize,dfile);
+
+            bidx = eidx;
+          }
+        offset = bidx;
+
+#ifdef DEBUG_MERGE
+        fprintf(stderr,"last idx in %s=%lld\n",data[t].afname,offset);
+        fflush(stderr);
+#endif
+
+        if (t > 0)
+          { fclose(_afile);
+            fclose(_dfile);
+            unlink(data[t].afname);
+            unlink(data[t].dfname);
+          }
+      }
+  }
+
+  fclose(afile);
+  fclose(dfile);
+
+  free(afname);
+  free(dfname);
+
+  return;
+}
+
+#else
+
 static void merge_output(Class_Arg *data, int NTHREADS)
 { DAZZ_DB    *db   = data[0].db;
   char       *path = data[0].path;
@@ -2060,12 +2650,26 @@ static void merge_output(Class_Arg *data, int NTHREADS)
   return;
 }
 #endif
+#endif
+
+static inline int ndigit(int n)
+{ int d = (n >= 0) ? 0 : 1;
+  for (; n != 0; d++)
+    n /= 10;
+  return d;
+}
 
 int main(int argc, char *argv[])
 { char          *path, *root;
+#ifndef DUP_PROFILE
   Profile_Index *P;
+#endif
   DAZZ_DB        _db, *db = &_db;
   Error_Model   *emodel;
+
+#ifdef PARALLEL_WRITE
+  char          *cfname, *afname, *dfname;
+#endif
 
   THREAD        *threads;
   Class_Arg     *paramc;
@@ -2117,7 +2721,7 @@ int main(int argc, char *argv[])
       }
   }
 
-  //  Open (untrimmed) DB
+  // Open (untrimmed) DB
   { if (Open_DB(argv[1],db) < 0)
       { fprintf(stderr,"%s: Cannot open %s.db\n",Prog_Name,argv[1]);
         exit (1);
@@ -2126,15 +2730,18 @@ int main(int argc, char *argv[])
       { fprintf(stderr,"%s: Cannot be called on a block\n",Prog_Name);
         exit (1);
       }
+
     path = PathTo(argv[1]);
     root = Root(argv[1],".db");
 
     NREADS = db->nreads;
     NPARTS = (NREADS / NTHREADS) + (NREADS % NTHREADS == 0 ? 0 : 1);
+
     if (VERBOSE)
       fprintf(stderr,"NREADS=%d, NPARTS=%d\n",NREADS,NPARTS);
   }
 
+#ifndef DUP_PROFILE
   // Open profile
   { P = Open_Profiles(argv[1]);
     if (P == NULL)
@@ -2146,6 +2753,7 @@ int main(int argc, char *argv[])
         exit(1);
       }
   }
+#endif
 
   // Precompute some probability values
   { for (int n = 1; n < 32768; n++)
@@ -2162,22 +2770,104 @@ int main(int argc, char *argv[])
   // Load error profile and precompute count thresholds and error probs for normal counts
   emodel = calc_init_thres();
 
-  // Precompute Skellam probabilities for each copy number
-  // TODO: lambda for each distance (v-u) = 2^0, 2^1, ..., 2^15 ?
-  //       depth in [1..100]
-  //       diff in those with prob > 1e-100?                  -> 100*100*15=15,0000 combinations
-  { /*double lambda = 40. * 100. / 20000.;
-    for (int k = 0; k <= 10; k++)
-      fprintf(stderr,"log Skellam(%d, %lf) = %lf\n",k,lambda,logp_skellam(k,lambda));*/
+  threads = Malloc(sizeof(THREAD)*NTHREADS,"Allocating class threads");
+  paramc  = Malloc(sizeof(Class_Arg)*NTHREADS,"Allocating class args");
+
+#ifdef PARALLEL_WRITE
+  // Precompute the total write size per thread and allocate the file
+  { DAZZ_STUB  *stub;
+    DAZZ_READ  *r;
+    char      **flist;
+    int        *findx;
+    int         map;
+    int64       csize;
+    int64       coffset[NTHREADS], doffset[NTHREADS];
+    int         hsize, id;
+    
+    stub      = Read_DB_Stub(Catenate(path,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
+    flist     = stub->prolog;
+    findx     = stub->nreads;
+    findx[-1] = 0;
+    map       = 0;
+
+    // Compute file size
+    csize = 0;
+    id    = 0;
+    for (int t = 0; t < NTHREADS; t++)
+      { coffset[t] = csize;
+        for (int i = 0; i < NPARTS && id < NREADS; i++, id++)
+          { while (id < findx[map-1])
+              map -= 1;
+            while (id >= findx[map])
+              map += 1;
+
+            r      = db->reads+id;
+            hsize  = strlen(flist[map])+ndigit(r->origin)+ndigit(r->fpulse)+ndigit(r->fpulse+r->rlen);
+            csize += 2*(r->rlen)+hsize+9;   // NOTE: 9 bytes for {@,/,/,_,\n,\n,+,\n,\n}
+          }
+      }
+    Free_DB_Stub(stub);
+
+    // Allocate file size
+    cfname = Strdup(Catenate(path,"/",root,".class"),"Allocating cfname");
+    int fd = open(cfname,O_CREAT|O_TRUNC|O_WRONLY,S_IRWXU);
+    if (fd == -1)
+      { fprintf(stderr,"open/create fail [errono=%d]\n",errno);
+        exit(1);
+      }
+    if (VERBOSE)
+      { fprintf(stderr,"Allocating %lld bytes for %s\n",csize,cfname);
+        fflush(stderr);
+      }
+    int ret = posix_fallocate(fd,0,sizeof(char)*csize);
+    if (ret != 0)
+      { fprintf(stderr,"fallocate fail [ret=%d]\n",ret);
+        exit(1);
+      }
+    close(fd);
+
+    // Prepare file descripter + offset per thread
+    for (int t = 0; t < NTHREADS; t++)
+      { paramc[t].cfile = Fopen(cfname,"w");
+        if (paramc[t].cfile == NULL)
+          { fprintf(stderr,"open fail [errono=%d]\n",errno);
+            exit(1);
+          }
+        if (fseek(paramc[t].cfile,sizeof(char)*coffset[t],SEEK_SET) == -1)
+          { fprintf(stderr,"fseek fail [errono=%d]\n",errno);
+            exit(1);
+          }
+      }
   }
+#endif
 
   // Classification in parallel
-  { threads = Malloc(sizeof(THREAD)*NTHREADS,"Allocating class threads");
-    paramc  = Malloc(sizeof(Class_Arg)*NTHREADS,"Allocating class args");
+  { for (int t = 0; t < NTHREADS; t++)
+      { 
+#ifdef DUP_PROFILE
+        paramc[t].P = Open_Profiles(argv[1]);
+        if (paramc[t].P == NULL)
+          { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,argv[1]);
+            exit (1);
+          }
+        if (NREADS != paramc[t].P->nreads)
+          { fprintf(stderr,"Inconsistent # of reads: .db (%d) != .prof (%d)\n",NREADS,paramc[t].P->nreads);
+            exit(1);
+          }
+#else
+        paramc[t].P = (t == 0) ? P : Clone_Profiles(P);
+#endif
+        
+        if (t == 0)
+          paramc[t].db = db;
+        else
+          { paramc[t].db = Malloc(sizeof(DAZZ_DB),"Allocating dazz db");
+            if (Open_DB(argv[1],paramc[t].db) < 0)
+              { fprintf(stderr,"%s: Cannot open %s.db\n",Prog_Name,argv[1]);
+                exit (1);
+              }
+          }
 
-    for (int t = 0; t < NTHREADS; t++)
-      { paramc[t].P      = (t == 0) ? P : Clone_Profiles(P);
-        paramc[t].db     = db;
         paramc[t].emodel = emodel;
         paramc[t].path   = path;
         paramc[t].root   = root;
@@ -2189,7 +2879,11 @@ int main(int argc, char *argv[])
       }
 
     if (VERBOSE)
-      fprintf(stderr,"Classifying%s...\n",FIND_SEEDS ? " & Finding seeds" : "");
+      { fprintf(stderr,"Classifying");
+        if (FIND_SEEDS)
+          fprintf(stderr," & Finding seeds");
+        fprintf(stderr,"...\n");
+      }
 
     for (int t = 1; t < NTHREADS; t++)
       pthread_create(threads+t,NULL,kmer_class_thread,paramc+t);
@@ -2199,22 +2893,34 @@ int main(int argc, char *argv[])
 
 #ifndef DEBUG_NO_MERGE
     if (VERBOSE)
-      fprintf(stderr,"Merging files...\n");
+      fprintf(stderr,"\nMerging files...\n");
+#ifdef PARALLEL_WRITE
+    merge_track(paramc,NTHREADS);
+#else
     merge_output(paramc,NTHREADS);
+#endif
 #endif
   }
 
-  { for (int t = NTHREADS-1; t >= 0; t--)
-      { free(paramc[t].afname);
+  { free(path);
+    free(root);
+    free_emodel(emodel);
+#ifdef PARALLEL_WRITE
+    free(cfname);
+#endif
+
+    for (int t = NTHREADS-1; t >= 0; t--)
+      { Free_Profiles(paramc[t].P);
+        Close_DB(paramc[t].db);
+#ifdef PARALLEL_WRITE
+        fclose(paramc[t].cfile);
+#else
+        free(paramc[t].afname);
         free(paramc[t].dfname);
-        Free_Profiles(paramc[t].P);
+#endif
       }
     free(paramc);
     free(threads);
-    free(path);
-    free(root);
-    free_emodel(emodel);
-    Close_DB(db);
 
     Catenate(NULL,NULL,NULL,NULL);
     Numbered_Suffix(NULL,0,NULL);

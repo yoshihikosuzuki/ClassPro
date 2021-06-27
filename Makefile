@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -O0 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
+CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 LDFLAGS = -lpthread -lm
 ALL = Classifier
 
