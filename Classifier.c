@@ -18,9 +18,10 @@
 #define PARALLEL_WRITE
 
 #define DEBUG
-#undef DEBUG_NO_MERGE 
-#undef DEBUG_SMALL
-#undef DEBUG_ITER
+#define DEBUG_NO_MERGE 
+#define DEBUG_SMALL
+#define NREAD_SMALL 100
+#define DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_CTX
 #undef DEBUG_ERROR
@@ -38,7 +39,8 @@
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 
-static const char *Usage = "[-vs] [-T<int(4)>] [-c<int>] [-r<int(20000)>] <source_root>";
+static const char *Usage = "[-vs] [-T<int(4)>] [-c<int>] [-r<int(20000)>] [-N<fastk_root>] "
+                           "<source>[.cram|.[bs]am|.db|.dam|.f[ast][aq][.gz] ...";
 
 enum State { ERROR, REPEAT, HAPLO, DIPLO, N_STATE };
 enum Ctype { HP, DS, TS, N_CTYPE };
@@ -46,14 +48,24 @@ enum Etype { SELF, OTHERS, N_ETYPE };
 enum Wtype { DROP, GAIN, N_WTYPE };
 
 static int          VERBOSE;
+static int          NTHREADS;
 static int          NREADS;
-static int          READ_LEN;
+static int          NPARTS;
 static int          FIND_SEEDS;
+static int          READ_LEN;
+
 static const int    DEFAULT_RLEN          = 20000;
 static const int    MAX_N_HC              = 5;
 static const int    MAX_NITER             = 10;
-static int          MIN_CNT_CHANGE        = 2;   // Every count change at a wall must be > this
-static int          MAX_CNT_CHANGE        = 5;   // Every count change > this becomes a wall candidate   // TODO: change to sqrt(H-cov?)
+static int          MIN_CNT_CHANGE        = 2;       // Every count change at a wall must be > this
+static int          MAX_CNT_CHANGE        = 5;       // Every count change > this becomes a wall candidate   // TODO: change to sqrt(H-cov?)
+static const double N_SIGMA_R             = 3;
+static const double N_SIGMA_R_U           = 1;
+static const int    N_BASE_EST            = 1000;
+static const int    N_BASE_EST_MIN        = 1;
+static const int    N_INTVL_EST           = 5;
+static const int    N_INTVL_EST_MIN       = 1;
+static const double MIN_P_NORMAL          = 0.1;     // min percentage of bases in reliable H/D intervals
 
 static const char   stoc[N_STATE]         = {'E','R','H','D'};
 static const double pethres_init[N_ETYPE] = {0.001, 0.05};
@@ -217,8 +229,7 @@ static inline double binom_test_g(int k, int n, double pe, int exact)
   if (decrease)
     { p = p_first = exp(logp_binom_pre(k,n,lpe,l1mpe));
       for (int x = k+1; x <= n; x++)
-        { p += p_curr = 
-        (logp_binom_pre(x,n,lpe,l1mpe));
+        { p += p_curr = exp(logp_binom_pre(x,n,lpe,l1mpe));
           if (exact == 0 && 10 * p_curr < p_first)
             break;
         }
@@ -385,11 +396,14 @@ typedef struct
 
 //typedef Error_Intvl Error_Intvls[N_ETYPE];
 
+
+// TODO: function polymorphism for Intvl and Rel_Intvl
+
 typedef struct
   { int    i;
     int    j;
-    bool    is_rel;   // hard assignment of reliable intervals
-    bool    is_err;   // hard assignment of erroneous intervals
+    bool   is_rel;   // hard assignment of reliable intervals
+    bool   is_err;   // hard assignment of erroneous intervals
     char   asgn;
   } Intvl;
 
@@ -1056,13 +1070,13 @@ static void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mo
  *
  ********************************************************************************************/
 
-static void process_global_hist(char *source_root, int COVERAGE)
+static void process_global_hist(char *FK_ROOT, int COVERAGE)
 { Histogram *H;
   int64     *hist;
 
-  H = Load_Histogram(source_root);
+  H = Load_Histogram(FK_ROOT);
   if (H == NULL)
-    { fprintf(stderr,"%s: Cannot open %s.hist\n",Prog_Name,source_root);
+    { fprintf(stderr,"%s: Cannot open %s.hist\n",Prog_Name,FK_ROOT);
       exit(1);
     }
   Modify_Histogram(H,H->low,H->high,0);
@@ -1168,35 +1182,28 @@ static void process_global_hist(char *source_root, int COVERAGE)
   Free_Histogram(H);
 }
  
-static void pmm_vi(uint16 *profile, int plen, double *hcov, double *dcov)
-{ const int ethres = lambda_prior[0]-3*(int)sqrt(lambda_prior[0]);
+static int pmm_vi(uint16 *profile, uint16 *nprofile, int plen, double *eta, double lambda[2])
+{ int    N;   // # of normal counts, = length of `nprofile` and `eta`/2
+  int    is_converged;
+  double a[2], b[2], alpha[2], eta_weight_k[2], eta_const_k[2];
+  double eta_sum, dg_sum_alpha;
+
+  const int ethres = lambda_prior[0]-3*(int)sqrt(lambda_prior[0]);
   const int rthres = lambda_prior[1]+3*(int)sqrt(lambda_prior[1]);
-  
-  uint16 nprofile[plen];
-  int N = 0;
+
+  for (int k = 0; k < 2; k++)
+    { a[k]      = a_prior[k];
+      b[k]      = b_prior[k];
+      alpha[k]  = alpha_prior[k];
+      lambda[k] = lambda_prior[k];
+    }
+
+  N = 0;
   for (int i = 0; i < plen; i++)
     if (ethres <= profile[i] && profile[i] <= rthres)
       nprofile[N++] = profile[i];
   if (N < 2)
-    { *hcov = lambda_prior[0];
-      *dcov = lambda_prior[1];
-      return;
-    }
-    
-  double eta[2*N];   // FIXME: stack overflow
-  double a[2], b[2], alpha[2], lambda[2];
-  int    is_converged;
-
-  double eta_sum;
-  double dg_sum_alpha;
-  double eta_weight_k[2], eta_const_k[2];
-
-  for (int k = 0; k < 2; k++)
-    { a[k] = a_prior[k];
-      b[k] = b_prior[k];
-      alpha[k] = alpha_prior[k];
-      lambda[k] = lambda_prior[k];
-    }
+    return N;
 
   for (int t = 0; t < MAX_NITER; t++)
     {
@@ -1249,7 +1256,7 @@ static void pmm_vi(uint16 *profile, int plen, double *hcov, double *dcov)
 #endif*/
 
       // Update distribution parameters
-      // NOTE: Using expected value (as good proxity for sum of assignments) in alpha updates
+      // NOTE: Using expected value (as a good proxity for sum of assignments) in alpha updates
       for (int k = 0; k < 2; k++)
         a[k] = b[k] = 0.;
       for (int n = 0; n < N; n++)
@@ -1257,7 +1264,6 @@ static void pmm_vi(uint16 *profile, int plen, double *hcov, double *dcov)
             { a[k] += eta[(n<<1)|k] * nprofile[n];
               b[k] += eta[(n<<1)|k];
             }
-          //fprintf(stderr,"n=%d, a=(%lf,%lf) b=(%lf,%lf)\n",n,a[0],a[1],b[0],b[1]);
         }
       for (int k = 0; k < 2; k++)
         { alpha[k] = b[k] + alpha_prior[k];
@@ -1295,13 +1301,19 @@ static void pmm_vi(uint16 *profile, int plen, double *hcov, double *dcov)
     }
 #endif
 
-  *hcov = lambda[0];
-  *dcov = lambda[1];
+  // H-cov = D-cov / 2 if they are too close
+  if (fabs(lambda[0]-lambda[1]) < sqrt(lambda[1]))
+    { lambda[0] = lambda[1]/2;
+#if defined(DEBUG_ITER) || defined(DEBUG_PMM)
+      fprintf(stderr,"H=D/2 ");
+#ifndef DEBUG_ITER
+      fprintf(stderr,"\n");
+#endif
+      fflush(stderr);
+#endif
+    }
 
-  if (fabs(*hcov-*dcov) < sqrt(*dcov))
-    *hcov = *dcov/2;
-
-  return;
+  return N;
 }
 
 /*******************************************************************************************
@@ -1310,54 +1322,33 @@ static void pmm_vi(uint16 *profile, int plen, double *hcov, double *dcov)
  *
  ********************************************************************************************/
 
-static void nn_intvl(int idx, Rel_Intvl *rintvl, int M, char s, int s_not, int ret[2])
+static void nn_intvl(int idx, Rel_Intvl *rintvl, int M, char s, int ret[2])
 { int p = idx-1;
-  if (s_not)
-    while (p >= 0 && rintvl[p].asgn == s)
-      p--;
-  else
-    while (p >= 0 && rintvl[p].asgn != s)
-      p--;
+  while (p >= 0 && rintvl[p].asgn != s)
+    p--;
   ret[0] = p;
 
   int n = idx+1;
-  if (s_not)
-    while (n < M && rintvl[n].asgn == s)
-      n++;
-  else
-    while (n < M && rintvl[n].asgn != s)
-      n++;
+  while (n < M && rintvl[n].asgn != s)
+    n++;
   ret[1] = n;
 
   return;
 }
 
-static void nn_intvl_u(int idx, Intvl *intvl, int N, char s, int s_not, int ret[2])
+static void nn_intvl_u(int idx, Intvl *intvl, int N, char s, int ret[2])
 { int p = idx-1;
-  if (s_not)
-    while (p >= 0 && intvl[p].asgn == s)
-      p--;
-  else
-    while (p >= 0 && intvl[p].asgn != s)
-      p--;
+  while (p >= 0 && intvl[p].asgn != s)
+    p--;
   ret[0] = p;
 
   int n = idx+1;
-  if (s_not)
-    while (n < N && intvl[n].asgn == s)
-      n++;
-  else
-    while (n < N && intvl[n].asgn != s)
-      n++;
+  while (n < N && intvl[n].asgn != s)
+    n++;
   ret[1] = n;
 
   return;
 }
-
-static const int N_BASE_EST = 1000;
-static const int N_BASE_EST_MIN = 1;
-static const int N_INTVL_EST = 5;
-static const int N_INTVL_EST_MIN = 1;
 
 static void est_cnt_base(int idx, Intvl *intvl, int N, char s, uint16* profile, int ret[2])
 { int l, csum;
@@ -1503,8 +1494,6 @@ static double calc_logp_e(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror,
   return logp_l+logp_r;
 }
 
-static const double N_SIGMA_R = 3;
-
 static double calc_logp_r(int idx, Rel_Intvl *rintvl, int M, int cov[])
 { Rel_Intvl ri = rintvl[idx];
   double logp_l, logp_r;
@@ -1523,7 +1512,7 @@ static double calc_logp_r(int idx, Rel_Intvl *rintvl, int M, int cov[])
     }
 
   int nn_idx[2];
-  nn_intvl(idx,rintvl,M,DIPLO,0,nn_idx);
+  nn_intvl(idx,rintvl,M,DIPLO,nn_idx);
   int p = nn_idx[0];
   int n = nn_idx[1];
   int pe = -1, nb = -1;
@@ -1583,7 +1572,7 @@ static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *ce
   double logp_sf, logp_er;
 
   int nn_idx[2];
-  nn_intvl(idx,rintvl,M,s,0,nn_idx);
+  nn_intvl(idx,rintvl,M,s,nn_idx);
   int p = nn_idx[0];
   int n = nn_idx[1];
 
@@ -1634,7 +1623,7 @@ static double calc_logp_h(int idx, Rel_Intvl *rintvl, int M, P_Error *cerror, in
 #endif
 
   int nn_idx[2];
-  nn_intvl(idx,rintvl,M,DIPLO,0,nn_idx);
+  nn_intvl(idx,rintvl,M,DIPLO,nn_idx);
   int p = nn_idx[0];
   int n = nn_idx[1];
   if (p >= 0)
@@ -1854,8 +1843,6 @@ static double calc_logp_e_u(int idx, Intvl *intvl, uint16 *profile, int plen, P_
   return logp_l+logp_r;
 }
 
-static const double N_SIGMA_R_U = 1;
-
 static double calc_logp_r_u(int idx, Intvl *intvl, int N, uint16 *profile, int cov[])
 { Intvl I = intvl[idx];
   double logp_l, logp_r;
@@ -1931,7 +1918,7 @@ static double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 *profil
   double logp_sf, logp_er;
 
   int nn_idx[2];
-  nn_intvl_u(idx,intvl,N,s,0,nn_idx);
+  nn_intvl_u(idx,intvl,N,s,nn_idx);
   int p = nn_idx[0];
   int n = nn_idx[1];
 
@@ -2069,8 +2056,6 @@ static void update_state_u(int idx, Intvl *intvl, int N, uint16 *profile, int pl
   return;
 }
 
-static const double MIN_P_NORMAL= 0.1;   // min percentage of bases in reliable H/D intervals
-
 static void classify_unreliable(uint16 *profile, int plen, Intvl *intvl, int N, P_Error *perror, int hcov, int dcov)
 { int cov[N_STATE] = {1, dcov+6*(int)sqrt(dcov), hcov, dcov};
 
@@ -2194,10 +2179,12 @@ typedef struct
     char          *root;
     char          *afname;   // .class.anno.#
     char          *dfname;   // .class.data.#
-    int            wch;      // Thread ID
+#ifdef PARALLEL_WRITE
     FILE          *cfile;
+#endif
     int            beg;      // Reads in [beg,end) are classified in this thread
     int            end;
+    int            wch;      // Thread ID
   } Class_Arg;
 
 static void *kmer_class_thread(void *arg)
@@ -2206,7 +2193,7 @@ static void *kmer_class_thread(void *arg)
   DAZZ_DB       *db     = data->db;
   Error_Model   *emodel = data->emodel;
   const int      K      = P->kmer;
-  const int      Km1    = P->kmer-1;
+  const int      Km1    = K-1;
 
   FILE    *afile, *dfile;         // Output files
   char    *track, *crack;         // Data for dfile (crack = track + km1)
@@ -2214,25 +2201,33 @@ static void *kmer_class_thread(void *arg)
 
   DAZZ_READ   *r;
   char        *seq;                   // Fetched sequence of the read
-  uint16      *profile;               // Fetched profile of a read
+  uint16      *profile, *nprofile;    // Fetched profile of a read
   int          rlen, plen;            // `rlen` = `plen` + `Km1`
+
   Seq_Ctx     *ctx[N_WTYPE];          // Context lengths per position
   Seq_Ctx     *lctx, *_lctx, *rctx;
+
   P_Error     *perror, *cerror;       // Error probability per position
+
+  double      *eta;                   // Parameter for PMM
+  double       lambda[2];             // H-cov, D-cov
+
   Error_Intvl *eintvl[N_ETYPE];
   Intvl       *intvl;
   Rel_Intvl   *rintvl;
-  int          N, M;                  // Number of walls/reliable intervals
   int         *wall;                  // Wall positions
   char        *asgn;                  // Interval classifications
+  int          N, M;                  // Number of walls/reliable intervals
 
-#ifdef PARALLEL_WRITE
+#if defined(PARALLEL_WRITE) && !defined(DEBUG_NO_MERGE)
   FILE       *cfile = data->cfile;
   DAZZ_STUB  *stub;
   char      **flist;
   int        *findx;
   int         map;
-  char       *buf = Malloc((db->maxlen+1)*sizeof(char),"buf");
+  char       *buf;
+  
+  buf = Malloc((db->maxlen+1)*sizeof(char),"buf");
   sprintf(buf,"%s/%s.db",data->path,data->root);
 
   stub      = Read_DB_Stub(buf,DB_STUB_NREADS|DB_STUB_PROLOGS);
@@ -2240,6 +2235,9 @@ static void *kmer_class_thread(void *arg)
   findx     = stub->nreads;
   findx[-1] = 0;
   map       = 0;
+
+  for (int i = 0; i < Km1; i++)
+    buf[i] = 'N';
 #endif
 
 #ifdef DEBUG_MERGE
@@ -2259,7 +2257,9 @@ static void *kmer_class_thread(void *arg)
     afile = Fopen(data->afname,"w");
     dfile = Fopen(data->dfname,"w");
     if (afile == NULL || dfile == NULL)
-      exit (1);
+      { fprintf(stderr,"Cannot open .class.*.%d\n",data->wch+1);
+        exit (1);
+      }
   }
 
   // Prepare buffers etc.
@@ -2273,6 +2273,7 @@ static void *kmer_class_thread(void *arg)
         fwrite(&idx,sizeof(int64),1,afile);
       }
 
+    seq   = New_Read_Buffer(db);
     track = New_Read_Buffer(db);
     crack = track + Km1;
     for (int i = 0; i < Km1; i++)
@@ -2280,19 +2281,18 @@ static void *kmer_class_thread(void *arg)
 
     intvl    = Malloc(db->maxlen*sizeof(Intvl),"Interval array");
     rintvl   = Malloc(db->maxlen*sizeof(Rel_Intvl),"Reliable interval array");
+    for (int i = SELF; i <= OTHERS; i++)
+      eintvl[i] = Malloc(db->maxlen*sizeof(Error_Intvl),"Error intvl array");
     wall     = Malloc(db->maxlen*sizeof(int),"Wall array");
     asgn     = Malloc(db->maxlen*sizeof(char),"Interval assignment array");
     perror   = Malloc(db->maxlen*sizeof(P_Error),"Error prob");
     cerror   = Malloc(db->maxlen*sizeof(P_Error),"Error prob");
-
-    for (int i = SELF; i <= OTHERS; i++)
-      eintvl[i] = Malloc(db->maxlen*sizeof(Error_Intvl),"Error intvl array");
-
+    eta      = Malloc(db->maxlen*2*sizeof(double),"PMM eta");
     profile  = Malloc(db->maxlen*sizeof(uint16),"Profile array");
-    seq      = New_Read_Buffer(db);
-
+    nprofile = Malloc(db->maxlen*sizeof(uint16),"Normal profile array");
     _lctx    = Malloc(db->maxlen*sizeof(Seq_Ctx),"Allocating left ctx vector");
     rctx     = Malloc(db->maxlen*sizeof(Seq_Ctx),"Allocating right ctx vector");
+
     lctx     = _lctx + Km1 - 1;
     _lctx[0][HP] = 1;
     _lctx[0][DS] = _lctx[0][TS] = _lctx[1][TS] = 0;
@@ -2301,7 +2301,7 @@ static void *kmer_class_thread(void *arg)
   }
 
 #ifdef DEBUG_SMALL
-  for (int id = data->beg; id < data->beg+1000; id++)
+  for (int id = data->beg; id < data->beg+NREAD_SMALL; id++)
 #else
   for (int id = data->beg; id < data->end; id++)
 #endif
@@ -2313,11 +2313,12 @@ static void *kmer_class_thread(void *arg)
       fflush(stderr);
 #endif
 
-      Load_Read(db,id,seq,2);   // TODO: OK to use mode `2` (capital)?
+      Load_Read(db,id,seq,2);
 
 #ifdef DEBUG
-      if (rlen != (int)strlen(seq))
-        { fprintf(stderr,"rlen (%d) != strlen(seq) (%d)\n",rlen,(int)strlen(seq));
+      const int slen = strlen(seq);
+      if (rlen != slen)
+        { fprintf(stderr,"rlen (%d) != strlen(seq) (%d)\n",rlen,slen);
           exit(1);
         }
       if (rlen > db->maxlen)
@@ -2341,18 +2342,17 @@ static void *kmer_class_thread(void *arg)
       int rtot = 0;
       for (int i = 0; i < M; i++)
         rtot += rintvl[i].j - rintvl[i].i;
-      fprintf(stderr,"%d walls, %d rel intvls (%d %%), ",N-1,M,(int)(100*rtot/plen));
+      fprintf(stderr,"%d (/%d; %d %%) rel intvls, ",M,N,(int)(100.*rtot/plen));
 #endif
 
-      double hcov, dcov;
-      pmm_vi(profile,plen,&hcov,&dcov);
+      int nnorm = pmm_vi(profile,nprofile,plen,eta,lambda);
 
 #ifdef DEBUG_ITER
-      fprintf(stderr,"(H,D)=(%.lf,%.lf)\n",hcov,dcov);
+      fprintf(stderr,"(H,D)=(%.lf,%.lf) (%d %% normal)\n",lambda[0],lambda[1],(int)(100.*nnorm/plen));
 #endif
 
-      classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,(int)hcov,(int)dcov);
-      classify_unreliable(profile,plen,intvl,N,perror,(int)hcov,(int)dcov);
+      classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,(int)lambda[0],(int)lambda[1]);
+      classify_unreliable(profile,plen,intvl,N,perror,(int)lambda[0],(int)lambda[1]);
 
       for (int i = 0; i < N; i++)
         for (int j = intvl[i].i; j < intvl[i].j; j++)
@@ -2373,9 +2373,7 @@ static void *kmer_class_thread(void *arg)
       while (id >= findx[map])
         map += 1;
 
-      int bufidx = 0;
-      for (int i = 0; i < Km1; i++)
-        buf[bufidx++] = 'N';
+      int bufidx = Km1;
       for (int i = 0; i < plen; i++)
         buf[bufidx++] = stoc[(unsigned char)crack[i]];
       buf[bufidx] = '\0';
@@ -2403,6 +2401,7 @@ static void *kmer_class_thread(void *arg)
   free(track-1);
   free(seq-1);
   free(profile);
+  free(nprofile);
   free(_lctx);
   free(rctx);
   free(perror);
@@ -2413,17 +2412,21 @@ static void *kmer_class_thread(void *arg)
   free(rintvl);
   free(wall);
   free(asgn);
+  free(eta);
   
+#if defined(PARALLEL_WRITE) && !defined(DEBUG_NO_MERGE)
+  free(buf);
+#endif
+
   return (NULL);
 }
 
 #ifndef DEBUG_NO_MERGE
-#ifdef PARALLEL_WRITE
-static void merge_track(Class_Arg *data, int NTHREADS)
+static void merge_output(Class_Arg *data, int NTHREADS)
 { DAZZ_DB    *db   = data[0].db;
   char       *path = data[0].path;
   char       *root = data[0].root;
-  
+
   char       *afname, *dfname;
   FILE       *afile, *dfile;
   FILE       *_afile, *_dfile;
@@ -2431,7 +2434,32 @@ static void merge_track(Class_Arg *data, int NTHREADS)
   int64       offset, bidx, eidx;
   uint32      tsize;
 
-  track = New_Read_Buffer(db);
+#ifndef PARALLEL_WRITE
+  const int   km1 = data[0].P->kmer-1;
+  DAZZ_STUB  *stub;
+  DAZZ_READ  *r;
+  char       *seq;
+  char      **flist;
+  int        *findx;
+  int         map;
+
+  char       *cfname;
+  FILE       *cfile;
+#endif
+
+  // Prepare DB info
+  { 
+#ifndef PARALLEL_WRITE
+    stub      = Read_DB_Stub(Catenate(path,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
+    flist     = stub->prolog;
+    findx     = stub->nreads;
+    findx[-1] = 0;
+    map       = 0;
+    seq       = New_Read_Buffer(db);
+#endif
+
+    track     = New_Read_Buffer(db);
+  }
 
   // Rename the first temporary files to the final output files
   { afname = Strdup(Catenate(path,"/.",root,".class.anno"),"Allocating afname");
@@ -2453,6 +2481,15 @@ static void merge_track(Class_Arg *data, int NTHREADS)
       { fprintf(stderr,"Cannot open output file(s) [errno=%d]\n",errno);
         exit(1);
       }
+
+#ifndef PARALLEL_WRITE
+    cfname = Strdup(Catenate(path,"/",root,".class"),"Allocating cfname");
+    cfile  = Fopen(cfname,"w");
+    if (cfile == NULL)
+      { fprintf(stderr,"Cannot open output file(s) [errno=%d]\n",errno);
+        exit(1);
+      }
+#endif
   }
 
   // Concatenate the temporary files while writing the ASCII file
@@ -2488,120 +2525,9 @@ static void merge_track(Class_Arg *data, int NTHREADS)
               fwrite(track,1,tsize,dfile);
 
             bidx = eidx;
-          }
-        offset = bidx;
 
-#ifdef DEBUG_MERGE
-        fprintf(stderr,"last idx in %s=%lld\n",data[t].afname,offset);
-        fflush(stderr);
-#endif
-
-        if (t > 0)
-          { fclose(_afile);
-            fclose(_dfile);
-            unlink(data[t].afname);
-            unlink(data[t].dfname);
-          }
-      }
-  }
-
-  fclose(afile);
-  fclose(dfile);
-
-  free(afname);
-  free(dfname);
-
-  return;
-}
-
-#else
-
-static void merge_output(Class_Arg *data, int NTHREADS)
-{ DAZZ_DB    *db   = data[0].db;
-  char       *path = data[0].path;
-  char       *root = data[0].root;
-  const int   km1  = data[0].P->kmer-1;
-  DAZZ_STUB  *stub;
-  DAZZ_READ  *r;
-  char       *track, *seq;
-  char      **flist;
-  int        *findx;
-  int         map;
-
-  char       *cfname, *afname, *dfname;
-  FILE       *cfile, *afile, *dfile;
-  FILE       *_afile, *_dfile;
-  int64       offset, bidx, eidx;
-  uint32      tsize;
-
-  // Prepare DB info
-  { stub      = Read_DB_Stub(Catenate(path,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
-    flist     = stub->prolog;
-    findx     = stub->nreads;
-    findx[-1] = 0;
-    map       = 0;
-
-    track     = New_Read_Buffer(db);
-    seq       = New_Read_Buffer(db);
-  }
-
-  // Rename the first temporary files to the final output files
-  { cfname = Strdup(Catenate(path,"/",root,".class"),"Allocating cfname");
-    afname = Strdup(Catenate(path,"/.",root,".class.anno"),"Allocating afname");
-    dfname = Strdup(Catenate(path,"/.",root,".class.data"),"Allocating dfname");
-
-    if (rename(data[0].afname,afname) == -1)
-      { fprintf(stderr,"Cannot rename %s -> %s [errno=%d]\n",data[0].afname,afname,errno);
-        exit(1);
-      }
-    if (rename(data[0].dfname,dfname) == -1)
-      { fprintf(stderr,"Cannot rename %s -> %s [errno=%d]\n",data[0].dfname,dfname,errno);
-        exit(1);
-      }
-
-    cfile = Fopen(cfname,"w");
-    afile = Fopen(afname,"ab+");
-    dfile = Fopen(dfname,"ab+");
-
-    if (cfile == NULL || afile == NULL || dfile == NULL)
-      { fprintf(stderr,"Cannot open output file(s) [errno=%d]\n",errno);
-        exit(1);
-      }
-  }
-
-  // Concatenate the temporary files while writing the ASCII file
-  { if (fseek(afile,(long)(sizeof(int)*2+sizeof(int64)),SEEK_SET) == -1)
-      { fprintf(stderr,"Skip header failed @%s [errno=%d]\n",afname,errno);
-        exit(1);
-      }
-
-    offset = bidx = 0;
-    for (int t = 0; t < NTHREADS; t++)
-      { if (t == 0)
-          { _afile = afile;
-            _dfile = dfile;
-          }
-        else
-          { _afile = Fopen(data[t].afname,"rb");
-            _dfile = Fopen(data[t].dfname,"rb");
-            if (_afile == NULL || _dfile == NULL)
-              { fprintf(stderr,"Cannot open intermediate file(s) [errno=%d]\n",errno);
-                exit(1);
-              }
-          }
-
-        for (int id = data[t].beg; id < data[t].end; id++)
-          { r = db->reads+id;
-
-            fread(&eidx,sizeof(int64),1,_afile);
-            if (t > 0)
-              { eidx += offset;
-                fwrite(&eidx,sizeof(int64),1,afile);
-              }
-            tsize = eidx-bidx;
-            fread(track,1,tsize,_dfile);
-            if (t > 0)
-              fwrite(track,1,tsize,dfile);
+#ifndef PARALLEL_WRITE
+            r = db->reads+id;
 
             Uncompress_Read(r->rlen,track);
             Load_Read(db,id,seq,2);
@@ -2617,8 +2543,7 @@ static void merge_output(Class_Arg *data, int NTHREADS)
             for (int i = km1; i < r->rlen; i++)
               fprintf(cfile,"%c",stoc[(unsigned char)track[i]]);
             fprintf(cfile,"\n");
-
-            bidx = eidx;
+#endif
           }
         offset = bidx;
 
@@ -2636,20 +2561,22 @@ static void merge_output(Class_Arg *data, int NTHREADS)
       }
   }
 
-  fclose(cfile);
   fclose(afile);
   fclose(dfile);
 
-  Free_DB_Stub(stub);
-
   free(track-1);
-  free(cfname);
   free(afname);
   free(dfname);
 
+#ifndef PARALLEL_WRITE
+  fclose(cfile);
+
+  Free_DB_Stub(stub);
+  free(cfname);
+#endif
+
   return;
 }
-#endif
 #endif
 
 static inline int ndigit(int n)
@@ -2659,24 +2586,126 @@ static inline int ndigit(int n)
   return d;
 }
 
-int main(int argc, char *argv[])
-{ char          *path, *root;
-#ifndef DUP_PROFILE
-  Profile_Index *P;
-#endif
-  DAZZ_DB        _db, *db = &_db;
-  Error_Model   *emodel;
+static void prepare_db(char *fnames[], int nfiles, Class_Arg *paramc, char *path, char *root)
+{ if (nfiles != 1)
+    { fprintf(stderr,"# of input files must be 1 in the case of DAZZ_DB\n");
+      exit(1);
+    }
+
+  for (int t = 0; t < NTHREADS; t++)
+    { paramc[t].db = Malloc(sizeof(DAZZ_DB),"Allocating dazz db");
+      if (Open_DB(fnames[0],paramc[t].db) < 0)
+        { fprintf(stderr,"%s: Cannot open %s.db\n",Prog_Name,fnames[0]);
+          exit (1);
+        }
+      if (paramc[t].db->part > 0)
+        { fprintf(stderr,"%s: Cannot be called on a block\n",Prog_Name);
+          exit (1);
+        }
+      if (NREADS != paramc[t].db->nreads)
+        { fprintf(stderr,"Inconsistent # of reads: .prof (%d) != .db (%d)\n",NREADS,paramc[t].db->nreads);
+          exit(1);
+        }
+    }
 
 #ifdef PARALLEL_WRITE
-  char          *cfname, *afname, *dfname;
+  // Precompute the total write size per thread and allocate the file
+  DAZZ_STUB  *stub;
+  DAZZ_READ  *r;
+  char      **flist;
+  int        *findx;
+  int         map;
+  char       *cfname;
+  int64       csize;
+  int64       coffset[NTHREADS];
+  int         hsize, id;
+  
+  // NOTE: `fnames[0]` must have ".db" as its suffix
+  stub      = Read_DB_Stub(Catenate(path,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
+  flist     = stub->prolog;
+  findx     = stub->nreads;
+  findx[-1] = 0;
+  map       = 0;
+
+  // Compute total file size and location to start writing per thread
+  csize = 0;
+  id    = 0;
+  for (int t = 0; t < NTHREADS; t++)
+    { coffset[t] = csize;
+      for (int i = 0; i < NPARTS && id < NREADS; i++, id++)
+        { while (id < findx[map-1])
+            map -= 1;
+          while (id >= findx[map])
+            map += 1;
+
+          r      = paramc[0].db->reads+id;
+          hsize  = strlen(flist[map])+ndigit(r->origin)+ndigit(r->fpulse)+ndigit(r->fpulse+r->rlen);
+          csize += 2*(r->rlen)+hsize+9;   // NOTE: 9 bytes for {@,/,/,_,\n,\n,+,\n,\n}
+        }
+    }
+  Free_DB_Stub(stub);
+
+  // Allocate file size
+  cfname = Strdup(Catenate(path,"/",root,".class"),"Allocating cfname");
+  int fd = open(cfname,O_CREAT|O_TRUNC|O_WRONLY,S_IRWXU);
+  if (fd == -1)
+    { fprintf(stderr,"open/create fail [errono=%d]\n",errno);
+      exit(1);
+    }
+  if (VERBOSE)
+    { fprintf(stderr,"Allocating %lld bytes for %s\n",csize,cfname);
+      fflush(stderr);
+    }
+  int ret = posix_fallocate(fd,0,sizeof(char)*csize);
+  if (ret != 0)
+    { fprintf(stderr,"fallocate fail [ret=%d]\n",ret);
+      exit(1);
+    }
+  close(fd);
+
+  // Prepare file descripter + offset per thread
+  for (int t = 0; t < NTHREADS; t++)
+    { paramc[t].cfile = Fopen(cfname,"w");
+      if (paramc[t].cfile == NULL)
+        { fprintf(stderr,"open fail [errono=%d]\n",errno);
+          exit(1);
+        }
+      if (fseek(paramc[t].cfile,sizeof(char)*coffset[t],SEEK_SET) == -1)
+        { fprintf(stderr,"fseek fail [errono=%d]\n",errno);
+          exit(1);
+        }
+    }
+
+  free(cfname);
 #endif
+
+  return;
+}
+
+static void prepare_fx(char *fnames[], int nfiles, Class_Arg *paramc, char *path, char *root)
+{
+  return;
+}
+
+#define N_EXT 9
+
+static char *EXT[N_EXT] = { ".db",
+                            ".fastq", ".fasta", ".fq", ".fa",
+                            ".fastq.gz", ".fasta.gz", ".fq.gz", ".fa.gz" };
+
+int main(int argc, char *argv[])
+{ char          *path, *root, *ext;
+  char         **fnames;
+  int            nfiles;
+
+  Profile_Index *P;
+  Error_Model   *emodel;
 
   THREAD        *threads;
   Class_Arg     *paramc;
 
-  int NTHREADS;
-  int NPARTS;
-  int COVERAGE;
+  int            COVERAGE;
+  char          *FK_ROOT;
 
   // Parse options
   { int    i, j, k;
@@ -2685,11 +2714,12 @@ int main(int argc, char *argv[])
 
     (void) flags;
 
-    ARG_INIT("K-mer Classifier");
+    ARG_INIT("ClassPro");
 
     NTHREADS = 4;
     COVERAGE = -1;
     READ_LEN = DEFAULT_RLEN;
+    FK_ROOT   = NULL;
 
     j = 1;
     for (i = 1; i < argc; i++)
@@ -2707,53 +2737,62 @@ int main(int argc, char *argv[])
           case 'r':
             ARG_POSITIVE(READ_LEN,"Average read length")
             break;
+          case 'N':
+            FK_ROOT = argv[i]+2;
+            break;
         }
       else
         argv[j++] = argv[i];
     argc = j;
 
-    VERBOSE = flags['v'];
+    VERBOSE    = flags['v'];
     FIND_SEEDS = flags['s'];
 
-    if (argc != 2)
+    if (argc < 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
         exit (1);
       }
+    nfiles = argc-1;
+    fnames = argv+1;
+
+    int fid, idx;
+
+    path = PathTo(fnames[0]);
+    for (idx = 0; idx < N_EXT; idx++)
+      { root  = Root(fnames[0],EXT[idx]);
+        fid   = open(Catenate(path,"/",root,EXT[idx]),O_RDONLY);
+        if (fid >= 0) break;
+        free(root);
+      }
+    if (idx == N_EXT || fid < 0)
+      { fprintf(stderr,"Cannot open %s as a .f{ast}[aq][.gz]|db file\n",fnames[0]);
+        exit(1);
+      }
+    close(fid);
+    ext = EXT[idx];
+
+    if (FK_ROOT == NULL)
+      FK_ROOT = Catenate(path,"/",root,"");
+
+    if (VERBOSE)
+      { fprintf(stderr,"# of input files = %d (first file: path = %s  root = %s  ext = %s)\n",nfiles,path,root,ext);
+        fprintf(stderr,"FASTK root = %s\n",FK_ROOT);
+      }
   }
 
-  // Open (untrimmed) DB
-  { if (Open_DB(argv[1],db) < 0)
-      { fprintf(stderr,"%s: Cannot open %s.db\n",Prog_Name,argv[1]);
-        exit (1);
-      }
-    if (db->part > 0)
-      { fprintf(stderr,"%s: Cannot be called on a block\n",Prog_Name);
+  // Open profile to get the number of reads
+  { P = Open_Profiles(FK_ROOT);
+    if (P == NULL)
+      { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,FK_ROOT);
         exit (1);
       }
 
-    path = PathTo(argv[1]);
-    root = Root(argv[1],".db");
-
-    NREADS = db->nreads;
+    NREADS = P->nreads;
     NPARTS = (NREADS / NTHREADS) + (NREADS % NTHREADS == 0 ? 0 : 1);
 
     if (VERBOSE)
       fprintf(stderr,"NREADS=%d, NPARTS=%d\n",NREADS,NPARTS);
   }
-
-#ifndef DUP_PROFILE
-  // Open profile
-  { P = Open_Profiles(argv[1]);
-    if (P == NULL)
-      { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,argv[1]);
-        exit (1);
-      }
-    if (NREADS != P->nreads)
-      { fprintf(stderr,"Inconsistent # of reads: .db (%d) != .prof (%d)\n",NREADS,P->nreads);
-        exit(1);
-      }
-  }
-#endif
 
   // Precompute some probability values
   { for (int n = 1; n < 32768; n++)
@@ -2765,107 +2804,31 @@ int main(int argc, char *argv[])
   }
 
   // Compute mean depths and hyperparameters from global histogram
-  process_global_hist(argv[1],COVERAGE);
+  process_global_hist(FK_ROOT,COVERAGE);
 
   // Load error profile and precompute count thresholds and error probs for normal counts
   emodel = calc_init_thres();
 
-  threads = Malloc(sizeof(THREAD)*NTHREADS,"Allocating class threads");
-  paramc  = Malloc(sizeof(Class_Arg)*NTHREADS,"Allocating class args");
+  { threads = Malloc(sizeof(THREAD)*NTHREADS,"Allocating class threads");
+    paramc  = Malloc(sizeof(Class_Arg)*NTHREADS,"Allocating class args");
 
-#ifdef PARALLEL_WRITE
-  // Precompute the total write size per thread and allocate the file
-  { DAZZ_STUB  *stub;
-    DAZZ_READ  *r;
-    char      **flist;
-    int        *findx;
-    int         map;
-    int64       csize;
-    int64       coffset[NTHREADS], doffset[NTHREADS];
-    int         hsize, id;
-    
-    stub      = Read_DB_Stub(Catenate(path,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
-    flist     = stub->prolog;
-    findx     = stub->nreads;
-    findx[-1] = 0;
-    map       = 0;
+    // Make file pointers, allocate file for parallel writing (if required)
+    if (strcmp(ext,".db") == 0)
+      prepare_db(fnames,nfiles,paramc,path,root);
+    else
+      prepare_fx(fnames,nfiles,paramc,path,root);
 
-    // Compute file size
-    csize = 0;
-    id    = 0;
+    // Classification in parallel
     for (int t = 0; t < NTHREADS; t++)
-      { coffset[t] = csize;
-        for (int i = 0; i < NPARTS && id < NREADS; i++, id++)
-          { while (id < findx[map-1])
-              map -= 1;
-            while (id >= findx[map])
-              map += 1;
-
-            r      = db->reads+id;
-            hsize  = strlen(flist[map])+ndigit(r->origin)+ndigit(r->fpulse)+ndigit(r->fpulse+r->rlen);
-            csize += 2*(r->rlen)+hsize+9;   // NOTE: 9 bytes for {@,/,/,_,\n,\n,+,\n,\n}
-          }
-      }
-    Free_DB_Stub(stub);
-
-    // Allocate file size
-    cfname = Strdup(Catenate(path,"/",root,".class"),"Allocating cfname");
-    int fd = open(cfname,O_CREAT|O_TRUNC|O_WRONLY,S_IRWXU);
-    if (fd == -1)
-      { fprintf(stderr,"open/create fail [errono=%d]\n",errno);
-        exit(1);
-      }
-    if (VERBOSE)
-      { fprintf(stderr,"Allocating %lld bytes for %s\n",csize,cfname);
-        fflush(stderr);
-      }
-    int ret = posix_fallocate(fd,0,sizeof(char)*csize);
-    if (ret != 0)
-      { fprintf(stderr,"fallocate fail [ret=%d]\n",ret);
-        exit(1);
-      }
-    close(fd);
-
-    // Prepare file descripter + offset per thread
-    for (int t = 0; t < NTHREADS; t++)
-      { paramc[t].cfile = Fopen(cfname,"w");
-        if (paramc[t].cfile == NULL)
-          { fprintf(stderr,"open fail [errono=%d]\n",errno);
-            exit(1);
-          }
-        if (fseek(paramc[t].cfile,sizeof(char)*coffset[t],SEEK_SET) == -1)
-          { fprintf(stderr,"fseek fail [errono=%d]\n",errno);
-            exit(1);
-          }
-      }
-  }
-#endif
-
-  // Classification in parallel
-  { for (int t = 0; t < NTHREADS; t++)
       { 
-#ifdef DUP_PROFILE
-        paramc[t].P = Open_Profiles(argv[1]);
-        if (paramc[t].P == NULL)
-          { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,argv[1]);
-            exit (1);
-          }
-        if (NREADS != paramc[t].P->nreads)
-          { fprintf(stderr,"Inconsistent # of reads: .db (%d) != .prof (%d)\n",NREADS,paramc[t].P->nreads);
-            exit(1);
-          }
-#else
+#ifndef DUP_PROFILE
         paramc[t].P = (t == 0) ? P : Clone_Profiles(P);
+#else
+        paramc[t].P = (t == 0) ? P : Open_Profiles(FK_ROOT);
 #endif
-        
-        if (t == 0)
-          paramc[t].db = db;
-        else
-          { paramc[t].db = Malloc(sizeof(DAZZ_DB),"Allocating dazz db");
-            if (Open_DB(argv[1],paramc[t].db) < 0)
-              { fprintf(stderr,"%s: Cannot open %s.db\n",Prog_Name,argv[1]);
-                exit (1);
-              }
+        if (paramc[t].P == NULL)
+          { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,FK_ROOT);
+            exit (1);
           }
 
         paramc[t].emodel = emodel;
@@ -2879,7 +2842,7 @@ int main(int argc, char *argv[])
       }
 
     if (VERBOSE)
-      { fprintf(stderr,"Classifying");
+      { fprintf(stderr,"Classifying %d-mers",P->kmer);
         if (FIND_SEEDS)
           fprintf(stderr," & Finding seeds");
         fprintf(stderr,"...\n");
@@ -2894,24 +2857,16 @@ int main(int argc, char *argv[])
 #ifndef DEBUG_NO_MERGE
     if (VERBOSE)
       fprintf(stderr,"\nMerging files...\n");
-#ifdef PARALLEL_WRITE
-    merge_track(paramc,NTHREADS);
-#else
     merge_output(paramc,NTHREADS);
-#endif
 #endif
   }
 
-  { free(path);
-    free(root);
-    free_emodel(emodel);
-#ifdef PARALLEL_WRITE
-    free(cfname);
-#endif
-
-    for (int t = NTHREADS-1; t >= 0; t--)
+  { for (int t = NTHREADS-1; t >= 0; t--)
       { Free_Profiles(paramc[t].P);
-        Close_DB(paramc[t].db);
+
+        if (strcmp(ext,".db") == 0)
+          Close_DB(paramc[t].db);
+
 #ifdef PARALLEL_WRITE
         fclose(paramc[t].cfile);
 #else
@@ -2919,8 +2874,12 @@ int main(int argc, char *argv[])
         free(paramc[t].dfname);
 #endif
       }
+    
+    free(path);
+    free(root);
     free(paramc);
     free(threads);
+    free_emodel(emodel);
 
     Catenate(NULL,NULL,NULL,NULL);
     Numbered_Suffix(NULL,0,NULL);
