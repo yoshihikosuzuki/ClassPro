@@ -15,13 +15,16 @@
 #include "bessel.h"
 
 #define DUP_PROFILE
+//#define WRITE_TRACK
 #define PARALLEL_WRITE
+#define NREAD_PWRITE 100
 
 #define DEBUG
-#define DEBUG_NO_MERGE 
-#define DEBUG_SMALL
-#define NREAD_SMALL 100
-#define DEBUG_ITER
+#undef DEBUG_SMALL
+#define NREAD_SMALL 10
+#undef DEBUG_NO_WRITE
+
+#undef DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_CTX
 #undef DEBUG_ERROR
@@ -2173,31 +2176,25 @@ static void remove_slip(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], char *
 
 typedef struct
   { Profile_Index *P;        // To fetch profile
-    DAZZ_DB       *db;       // To fetch sequence
     Error_Model   *emodel;   // Error models for {HP, DS, TS}
-    char          *path;     // "path/root[.db|.prof]" == source_root
-    char          *root;
-    char          *afname;   // .class.anno.#
-    char          *dfname;   // .class.data.#
-#ifdef PARALLEL_WRITE
-    FILE          *cfile;
-#endif
+    DAZZ_DB       *db;       // To fetch sequence from .db
+    DAZZ_STUB     *stub;
     int            beg;      // Reads in [beg,end) are classified in this thread
     int            end;
-    int            wch;      // Thread ID
+    FILE          *afile;
+    FILE          *dfile;
+    FILE          *cfile;
   } Class_Arg;
 
 static void *kmer_class_thread(void *arg)
 { Class_Arg     *data   = (Class_Arg *)arg;
   Profile_Index *P      = data->P;
-  DAZZ_DB       *db     = data->db;
   Error_Model   *emodel = data->emodel;
   const int      K      = P->kmer;
   const int      Km1    = K-1;
-
-  FILE    *afile, *dfile;         // Output files
-  char    *track, *crack;         // Data for dfile (crack = track + km1)
-  int64    idx;                   // Data for afile
+  
+  char        *track, *crack;         // Data for dfile (crack = track + km1)
+  int64        idx;                   // Data for afile
 
   DAZZ_READ   *r;
   char        *seq;                   // Fetched sequence of the read
@@ -2218,60 +2215,22 @@ static void *kmer_class_thread(void *arg)
   int         *wall;                  // Wall positions
   char        *asgn;                  // Interval classifications
   int          N, M;                  // Number of walls/reliable intervals
+  char        *buf;
 
-#if defined(PARALLEL_WRITE) && !defined(DEBUG_NO_MERGE)
-  FILE       *cfile = data->cfile;
-  DAZZ_STUB  *stub;
-  char      **flist;
-  int        *findx;
-  int         map;
-  char       *buf;
-  
-  buf = Malloc((db->maxlen+1)*sizeof(char),"buf");
-  sprintf(buf,"%s/%s.db",data->path,data->root);
-
-  stub      = Read_DB_Stub(buf,DB_STUB_NREADS|DB_STUB_PROLOGS);
-  flist     = stub->prolog;
-  findx     = stub->nreads;
+  // .db
+  DAZZ_DB    *db    = data->db;
+  DAZZ_STUB  *stub  = data->stub;
+  char      **flist = stub->prolog;
+  int        *findx = stub->nreads;
+  int         map   = 0;
   findx[-1] = 0;
-  map       = 0;
-
-  for (int i = 0; i < Km1; i++)
-    buf[i] = 'N';
-#endif
-
-#ifdef DEBUG_MERGE
-  fprintf(stderr,"beg=%d,end=%d @thread %d\n",data->beg,data->end,data->wch);
-  fflush(stderr);
-#endif
-
-  // Generate output file names and open them
-  { // NOTE: 14 for "./" and ".class.[anno|data]" and 10 for "<wch>" and '\0'
-    const int fnlen = strlen(data->path)+strlen(data->root)+14+10;
-
-    data->afname = Malloc(fnlen,"Allocating afname");
-    sprintf(data->afname,"%s/.%s.class.anno.%d",data->path,data->root,data->wch+1);
-    data->dfname = Malloc(fnlen,"Allocating dfname");
-    sprintf(data->dfname,"%s/.%s.class.data.%d",data->path,data->root,data->wch+1);
-
-    afile = Fopen(data->afname,"w");
-    dfile = Fopen(data->dfname,"w");
-    if (afile == NULL || dfile == NULL)
-      { fprintf(stderr,"Cannot open .class.*.%d\n",data->wch+1);
-        exit (1);
-      }
-  }
 
   // Prepare buffers etc.
   { idx = 0;
-
-    // Write header only to the first temporary output file
-    if (data->wch == 0)
-      { const int size = 8;
-        fwrite(&NREADS,sizeof(int),1,afile);
-        fwrite(&size,sizeof(int),1,afile);
-        fwrite(&idx,sizeof(int64),1,afile);
-      }
+    
+    buf = Malloc((db->maxlen+1)*sizeof(char),"buf");
+    for (int i = 0; i < Km1; i++)
+      buf[i] = 'N';
 
     seq   = New_Read_Buffer(db);
     track = New_Read_Buffer(db);
@@ -2367,7 +2326,8 @@ static void *kmer_class_thread(void *arg)
       fflush(stderr);
 #endif*/
 
-#if defined(PARALLEL_WRITE) && !defined(DEBUG_NO_MERGE)
+#ifndef DEBUG_NO_WRITE
+      // .db
       while (id < findx[map-1])
         map -= 1;
       while (id >= findx[map])
@@ -2378,16 +2338,16 @@ static void *kmer_class_thread(void *arg)
         buf[bufidx++] = stoc[(unsigned char)crack[i]];
       buf[bufidx] = '\0';
 
-      fprintf(cfile,"@%s/%d/%d_%d\n%s\n+\n%s\n",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen,seq,buf);
-#endif
+      fprintf(data->cfile,"@%s/%d/%d_%d\n%s\n+\n%s\n",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen,seq,buf);
 
       // Output binary to DAZZ track
       int l = plen + Km1;
       Compress_Read(l,track);
       int t = COMPRESSED_LEN(l);
-      fwrite(track,1,t,dfile);
+      fwrite(track,1,t,data->dfile);
       idx += t;
-      fwrite(&idx,sizeof(int64),1,afile);
+      fwrite(&idx,sizeof(int64),1,data->afile);
+#endif
     }
 
 #ifdef DEBUG_MERGE
@@ -2395,8 +2355,15 @@ static void *kmer_class_thread(void *arg)
       fflush(stderr);
 #endif
 
-  fclose(afile);
-  fclose(dfile);
+  // .db
+  //if (strcmp(ext,".db") == 0)
+    { Close_DB(db);
+      Free_DB_Stub(stub);
+    }
+
+  fclose(data->cfile);
+  fclose(data->afile);
+  fclose(data->dfile);
 
   free(track-1);
   free(seq-1);
@@ -2413,189 +2380,142 @@ static void *kmer_class_thread(void *arg)
   free(wall);
   free(asgn);
   free(eta);
-  
-#if defined(PARALLEL_WRITE) && !defined(DEBUG_NO_MERGE)
   free(buf);
-#endif
 
   return (NULL);
 }
 
-#ifndef DEBUG_NO_MERGE
-static void merge_output(Class_Arg *data, int NTHREADS)
-{ DAZZ_DB    *db   = data[0].db;
-  char       *path = data[0].path;
-  char       *root = data[0].root;
+enum Out_File { CLASS, DATA, ANNO, N_OTYPE };
 
-  char       *afname, *dfname;
-  FILE       *afile, *dfile;
-  FILE       *_afile, *_dfile;
-  char       *track;
-  int64       offset, bidx, eidx;
-  uint32      tsize;
+static char *osep[N_OTYPE] = { "/", "/.", "/." };
+static char *osuf[N_OTYPE] = { ".class", ".class.data", ".class.anno" };
+static bool  obin[N_OTYPE] = { false, true, true };
 
-#ifndef PARALLEL_WRITE
-  const int   km1 = data[0].P->kmer-1;
-  DAZZ_STUB  *stub;
-  DAZZ_READ  *r;
-  char       *seq;
-  char      **flist;
-  int        *findx;
-  int         map;
+typedef struct
+  { char **fnames;
+    char *final;
+    int   N;
+    bool  is_binary;
+  } Merge_Arg;
 
-  char       *cfname;
-  FILE       *cfile;
+static void *merge_anno(void *arg)
+{ Merge_Arg  *data     = (Merge_Arg *)arg;
+  char      **fnames   = data->fnames;
+  char       *final    = data->final;
+  int         N        = data->N;
+
+  FILE      *f, *g;
+  int64      offset, idx;
+
+  f = Fopen(fnames[0],"ab+");
+  if (f == NULL)
+    { fprintf(stderr,"Cannot open %s [errno=%d]\n",fnames[0],errno);
+      exit(1);
+    }
+
+  if (fseek(f,-(long)sizeof(int64),SEEK_END) == -1)
+    { fprintf(stderr,"Skip header failed for %s [errno=%d]\n",fnames[0],errno);
+      exit(1);
+    }
+
+  int ret = fread(&offset,sizeof(int64),1,f);
+  if (ret != 1)
+    { fprintf(stderr,"Cannot read last index of the first .anno file [ret=%d]\n",ret);
+      exit(1);
+    }
+
+  for (int i = 1; i < N; i++)
+    { g = Fopen(fnames[i],"rb");
+      if (g == NULL)
+        { fprintf(stderr,"Cannot open %s [errno=%d]\n",fnames[i],errno);
+          exit(1);
+        }
+
+      while (fread(&idx,sizeof(int64),1,g) == 1)
+        { 
+#ifdef DEBUG
+          if (idx == 0)
+            { fprintf(stderr,"First index must not be 0 except the first .anno file\n");
+              exit(1);
+            }
 #endif
 
-  // Prepare DB info
-  { 
-#ifndef PARALLEL_WRITE
-    stub      = Read_DB_Stub(Catenate(path,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
-    flist     = stub->prolog;
-    findx     = stub->nreads;
-    findx[-1] = 0;
-    map       = 0;
-    seq       = New_Read_Buffer(db);
-#endif
+          idx += offset;
+          fwrite(&idx,sizeof(int64),1,f);
+        }
+      offset = idx;
 
-    track     = New_Read_Buffer(db);
-  }
+      fclose(g);
+      unlink(fnames[i]);
+    }
+  fclose(f);
+  
+  if (rename(fnames[0],final) == -1)
+    { fprintf(stderr,"Cannot rename %s to %s [errno=%d]\n",fnames[0],final,errno);
+      exit(1);
+    }
 
-  // Rename the first temporary files to the final output files
-  { afname = Strdup(Catenate(path,"/.",root,".class.anno"),"Allocating afname");
-    dfname = Strdup(Catenate(path,"/.",root,".class.data"),"Allocating dfname");
-
-    if (rename(data[0].afname,afname) == -1)
-      { fprintf(stderr,"Cannot rename %s -> %s [errno=%d]\n",data[0].afname,afname,errno);
-        exit(1);
-      }
-    if (rename(data[0].dfname,dfname) == -1)
-      { fprintf(stderr,"Cannot rename %s -> %s [errno=%d]\n",data[0].dfname,dfname,errno);
-        exit(1);
-      }
-
-    afile = Fopen(afname,"ab+");
-    dfile = Fopen(dfname,"ab+");
-
-    if (afile == NULL || dfile == NULL)
-      { fprintf(stderr,"Cannot open output file(s) [errno=%d]\n",errno);
-        exit(1);
-      }
-
-#ifndef PARALLEL_WRITE
-    cfname = Strdup(Catenate(path,"/",root,".class"),"Allocating cfname");
-    cfile  = Fopen(cfname,"w");
-    if (cfile == NULL)
-      { fprintf(stderr,"Cannot open output file(s) [errno=%d]\n",errno);
-        exit(1);
-      }
-#endif
-  }
-
-  // Concatenate the temporary files while writing the ASCII file
-  { if (fseek(afile,(long)(sizeof(int)*2+sizeof(int64)),SEEK_SET) == -1)
-      { fprintf(stderr,"Skip header failed @%s [errno=%d]\n",afname,errno);
-        exit(1);
-      }
-
-    offset = bidx = 0;
-    for (int t = 0; t < NTHREADS; t++)
-      { if (t == 0)
-          { _afile = afile;
-            _dfile = dfile;
-          }
-        else
-          { _afile = Fopen(data[t].afname,"rb");
-            _dfile = Fopen(data[t].dfname,"rb");
-            if (_afile == NULL || _dfile == NULL)
-              { fprintf(stderr,"Cannot open intermediate file(s) [errno=%d]\n",errno);
-                exit(1);
-              }
-          }
-
-        for (int id = data[t].beg; id < data[t].end; id++)
-          { fread(&eidx,sizeof(int64),1,_afile);
-            if (t > 0)
-              { eidx += offset;
-                fwrite(&eidx,sizeof(int64),1,afile);
-              }
-            tsize = eidx-bidx;
-            fread(track,1,tsize,_dfile);
-            if (t > 0)
-              fwrite(track,1,tsize,dfile);
-
-            bidx = eidx;
-
-#ifndef PARALLEL_WRITE
-            r = db->reads+id;
-
-            Uncompress_Read(r->rlen,track);
-            Load_Read(db,id,seq,2);
-
-            while (id < findx[map-1])
-              map -= 1;
-            while (id >= findx[map])
-              map += 1;
-
-            fprintf(cfile,"@%s/%d/%d_%d\n%s\n+\n",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen,seq);
-            for (int i = 0; i < km1; i++)
-              fprintf(cfile,"N");
-            for (int i = km1; i < r->rlen; i++)
-              fprintf(cfile,"%c",stoc[(unsigned char)track[i]]);
-            fprintf(cfile,"\n");
-#endif
-          }
-        offset = bidx;
-
-#ifdef DEBUG_MERGE
-        fprintf(stderr,"last idx in %s=%lld\n",data[t].afname,offset);
-        fflush(stderr);
-#endif
-
-        if (t > 0)
-          { fclose(_afile);
-            fclose(_dfile);
-            unlink(data[t].afname);
-            unlink(data[t].dfname);
-          }
-      }
-  }
-
-  fclose(afile);
-  fclose(dfile);
-
-  free(track-1);
-  free(afname);
-  free(dfname);
-
-#ifndef PARALLEL_WRITE
-  fclose(cfile);
-
-  Free_DB_Stub(stub);
-  free(cfname);
-#endif
-
-  return;
+  return (NULL);
 }
-#endif
+
+#define BUF_SIZE 4096
+
+static void *merge_files(void *arg)
+{ Merge_Arg  *data      = (Merge_Arg *)arg;
+  char      **fnames    = data->fnames;
+  char       *final     = data->final;
+  int         N         = data->N;
+  bool        is_binary = data->is_binary;
+
+  FILE *f, *g;
+  char buf[BUF_SIZE];
+  int n;
+
+  f = Fopen(fnames[0], is_binary ? "ab+" : "a+");
+  if (f == NULL)
+    { fprintf(stderr,"Cannot open %s [errno=%d]\n",fnames[0],errno);
+      exit(1);
+    }
+
+  for (int i = 1; i < N; i++)
+    { g = Fopen(fnames[i], is_binary ? "rb" : "r");
+      if (g == NULL)
+        { fprintf(stderr,"Cannot open %s [errno=%d]\n",fnames[i],errno);
+          exit(1);
+        }
+
+      while ((n = fread(buf,sizeof(char),BUF_SIZE,g)) > 0)
+        fwrite(buf,sizeof(char),n,f);
+
+      fclose(g);
+      unlink(fnames[i]);
+    }
+  fclose(f);
+  
+  if (rename(fnames[0],final) == -1)
+    { fprintf(stderr,"Cannot rename %s to %s [errno=%d]\n",fnames[0],final,errno);
+      exit(1);
+    }
+
+  return (NULL);
+}
 
 static inline int ndigit(int n)
-{ int d = (n >= 0) ? 0 : 1;
+{ if (n == 0)
+    return 1;
+  int d = (n >= 0) ? 0 : 1;
   for (; n != 0; d++)
     n /= 10;
   return d;
 }
 
-static void prepare_db(char *fnames[], int nfiles, Class_Arg *paramc, char *path, char *root)
-{ if (nfiles != 1)
-    { fprintf(stderr,"# of input files must be 1 in the case of DAZZ_DB\n");
-      exit(1);
-    }
+static void prepare_db(char *path, char *root, Class_Arg *paramc)
+{ char *name = Catenate(path,"/",root,".db");
 
   for (int t = 0; t < NTHREADS; t++)
     { paramc[t].db = Malloc(sizeof(DAZZ_DB),"Allocating dazz db");
-      if (Open_DB(fnames[0],paramc[t].db) < 0)
-        { fprintf(stderr,"%s: Cannot open %s.db\n",Prog_Name,fnames[0]);
+      if (Open_DB(name,paramc[t].db) < 0)
+        { fprintf(stderr,"%s: Cannot open %s.db\n",Prog_Name,name);
           exit (1);
         }
       if (paramc[t].db->part > 0)
@@ -2606,10 +2526,10 @@ static void prepare_db(char *fnames[], int nfiles, Class_Arg *paramc, char *path
         { fprintf(stderr,"Inconsistent # of reads: .prof (%d) != .db (%d)\n",NREADS,paramc[t].db->nreads);
           exit(1);
         }
+      paramc[t].stub = Read_DB_Stub(name,DB_STUB_NREADS|DB_STUB_PROLOGS);
     }
 
-#ifdef PARALLEL_WRITE
-  // Precompute the total write size per thread and allocate the file
+#if !defined(DEBUG_NO_WRITE) && defined(PARALLEL_WRITE)
   DAZZ_STUB  *stub;
   DAZZ_READ  *r;
   char      **flist;
@@ -2619,15 +2539,14 @@ static void prepare_db(char *fnames[], int nfiles, Class_Arg *paramc, char *path
   int64       csize;
   int64       coffset[NTHREADS];
   int         hsize, id;
-  
-  // NOTE: `fnames[0]` must have ".db" as its suffix
-  stub      = Read_DB_Stub(Catenate(path,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
+
+  stub      = Read_DB_Stub(name,DB_STUB_NREADS|DB_STUB_PROLOGS);
   flist     = stub->prolog;
   findx     = stub->nreads;
   findx[-1] = 0;
   map       = 0;
 
-  // Compute total file size and location to start writing per thread
+  // Total file size and write start position per thread
   csize = 0;
   id    = 0;
   for (int t = 0; t < NTHREADS; t++)
@@ -2646,7 +2565,7 @@ static void prepare_db(char *fnames[], int nfiles, Class_Arg *paramc, char *path
   Free_DB_Stub(stub);
 
   // Allocate file size
-  cfname = Strdup(Catenate(path,"/",root,".class"),"Allocating cfname");
+  cfname = Catenate(path,"/",root,".class");
   int fd = open(cfname,O_CREAT|O_TRUNC|O_WRONLY,S_IRWXU);
   if (fd == -1)
     { fprintf(stderr,"open/create fail [errono=%d]\n",errno);
@@ -2695,6 +2614,7 @@ static char *EXT[N_EXT] = { ".db",
 
 int main(int argc, char *argv[])
 { char          *path, *root, *ext;
+  char          *FK_ROOT;
   char         **fnames;
   int            nfiles;
 
@@ -2703,9 +2623,9 @@ int main(int argc, char *argv[])
 
   THREAD        *threads;
   Class_Arg     *paramc;
+  Merge_Arg     *paramm;
 
   int            COVERAGE;
-  char          *FK_ROOT;
 
   // Parse options
   { int    i, j, k;
@@ -2772,7 +2692,7 @@ int main(int argc, char *argv[])
     ext = EXT[idx];
 
     if (FK_ROOT == NULL)
-      FK_ROOT = Catenate(path,"/",root,"");
+      FK_ROOT = Strdup(Catenate(path,"/",root,""),"FK_ROOT");
 
     if (VERBOSE)
       { fprintf(stderr,"# of input files = %d (first file: path = %s  root = %s  ext = %s)\n",nfiles,path,root,ext);
@@ -2780,45 +2700,56 @@ int main(int argc, char *argv[])
       }
   }
 
-  // Open profile to get the number of reads
-  { P = Open_Profiles(FK_ROOT);
-    if (P == NULL)
+  // Precompute
+  { if ((P = Open_Profiles(FK_ROOT)) == NULL)
       { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,FK_ROOT);
         exit (1);
       }
-
     NREADS = P->nreads;
     NPARTS = (NREADS / NTHREADS) + (NREADS % NTHREADS == 0 ? 0 : 1);
-
     if (VERBOSE)
       fprintf(stderr,"NREADS=%d, NPARTS=%d\n",NREADS,NPARTS);
-  }
 
-  // Precompute some probability values
-  { for (int n = 1; n < 32768; n++)
+    for (int n = 1; n < 32768; n++)
       logfact[n] = logfact[n-1]+log(n);
 
     digamma[1] = -0.57721566490153;
     for (int n = 1; n < DIGAMMA_MAX; n++)
       digamma[n+1] = digamma[n]+(1./(double)n);
+
+    process_global_hist(FK_ROOT,COVERAGE);
+    emodel = calc_init_thres();
   }
 
-  // Compute mean depths and hyperparameters from global histogram
-  process_global_hist(FK_ROOT,COVERAGE);
-
-  // Load error profile and precompute count thresholds and error probs for normal counts
-  emodel = calc_init_thres();
-
+  // Invoke classification 
   { threads = Malloc(sizeof(THREAD)*NTHREADS,"Allocating class threads");
     paramc  = Malloc(sizeof(Class_Arg)*NTHREADS,"Allocating class args");
+    paramm  = Malloc(sizeof(Merge_Arg)*N_OTYPE,"Allocate merge args");
 
-    // Make file pointers, allocate file for parallel writing (if required)
     if (strcmp(ext,".db") == 0)
-      prepare_db(fnames,nfiles,paramc,path,root);
+      { if (nfiles != 1)
+          { fprintf(stderr,"# of input .db files must be 1\n");
+            exit(1);
+          }
+        prepare_db(path,root,paramc);
+      }
     else
       prepare_fx(fnames,nfiles,paramc,path,root);
 
-    // Classification in parallel
+    // NOTE: 14 for "/." and ".class.[anno|data]." and 10 for "`t`" and '\0'
+    const int fnlen = strlen(path)+strlen(root)+14+10;
+    for (int c = 0; c < N_OTYPE; c++)
+      { paramm[c].fnames = Malloc(sizeof(char *)*NTHREADS,"Allocating fnames");
+        for (int t = 0; t < NTHREADS; t++)
+          { paramm[c].fnames[t] = Malloc(sizeof(char)*fnlen,"Allocating fname");
+            sprintf(paramm[c].fnames[t],"%s%s%s%s.%d",path,osep[c],root,osuf[c],t+1);
+          }
+        paramm[c].final = Malloc(sizeof(char)*fnlen,"Allocating fname");
+        sprintf(paramm[c].final,"%s%s%s%s",path,osep[c],root,osuf[c]);
+        paramm[c].N         = NTHREADS;
+        paramm[c].is_binary = obin[c];
+      }
+
     for (int t = 0; t < NTHREADS; t++)
       { 
 #ifndef DUP_PROFILE
@@ -2832,21 +2763,34 @@ int main(int argc, char *argv[])
           }
 
         paramc[t].emodel = emodel;
-        paramc[t].path   = path;
-        paramc[t].root   = root;
-        paramc[t].afname = NULL;
-        paramc[t].dfname = NULL;
-        paramc[t].wch    = t;
         paramc[t].beg    = t*NPARTS;
         paramc[t].end    = MIN((t+1)*NPARTS,NREADS);
+
+        paramc[t].afile = Fopen(paramm[ANNO].fnames[t],"wb");
+        paramc[t].dfile = Fopen(paramm[DATA].fnames[t],"wb");
+        if (paramc[t].afile == NULL || paramc[t].dfile == NULL)
+          { fprintf(stderr,"Cannot open .class.*.%d\n",t+1);
+            exit (1);
+          }
+
+#ifndef PARALLEL_WRITE
+        paramc[t].cfile  = Fopen(paramm[CLASS].fnames[t],"w");
+        if (paramc[t].cfile == NULL)
+          { fprintf(stderr,"Cannot open *.class.%d\n",t+1);
+            exit (1);
+          }
+#endif
       }
 
+    { const int idx  = 0;
+      const int size = 8;
+      fwrite(&NREADS,sizeof(int),1,paramc[0].afile);
+      fwrite(&size,sizeof(int),1,paramc[0].afile);
+      fwrite(&idx,sizeof(int64),1,paramc[0].afile);
+    }
+
     if (VERBOSE)
-      { fprintf(stderr,"Classifying %d-mers",P->kmer);
-        if (FIND_SEEDS)
-          fprintf(stderr," & Finding seeds");
-        fprintf(stderr,"...\n");
-      }
+      fprintf(stderr,"Classifying %d-mers%s...\n",P->kmer,FIND_SEEDS ? "" : " & Finding seeds");
 
     for (int t = 1; t < NTHREADS; t++)
       pthread_create(threads+t,NULL,kmer_class_thread,paramc+t);
@@ -2854,37 +2798,48 @@ int main(int argc, char *argv[])
     for (int t = 1; t < NTHREADS; t++)
       pthread_join(threads[t],NULL);
 
-#ifndef DEBUG_NO_MERGE
-    if (VERBOSE)
-      fprintf(stderr,"\nMerging files...\n");
-    merge_output(paramc,NTHREADS);
-#endif
-  }
+#ifndef DEBUG_NO_WRITE
+    { int i;
 
-  { for (int t = NTHREADS-1; t >= 0; t--)
-      { Free_Profiles(paramc[t].P);
-
-        if (strcmp(ext,".db") == 0)
-          Close_DB(paramc[t].db);
-
-#ifdef PARALLEL_WRITE
-        fclose(paramc[t].cfile);
+#ifndef PARALLEL_WRITE
+      const int c = CLASS;
 #else
-        free(paramc[t].afname);
-        free(paramc[t].dfname);
+      const int c = DATA;
 #endif
-      }
-    
-    free(path);
-    free(root);
-    free(paramc);
-    free(threads);
-    free_emodel(emodel);
 
-    Catenate(NULL,NULL,NULL,NULL);
-    Numbered_Suffix(NULL,0,NULL);
-    free(Prog_Name);
+      if (VERBOSE)
+        fprintf(stderr,"\nMerging files...\n");
+
+      for (i = 0; i+1 < NTHREADS && c+i < ANNO; i++)
+        pthread_create(threads+i+1,NULL,merge_files,paramm+c+i);
+      for (; c+i < ANNO; i++)
+        merge_files(paramm+c+i);
+      merge_anno(paramm+ANNO);
+      for (i = 0; i+1 < NTHREADS && c+i < ANNO; i++)
+        pthread_join(threads[i+1],NULL);
+    }
+#endif
   }
 
-  exit (0);
+  for (int t = NTHREADS-1; t >= 0; t--)
+    Free_Profiles(paramc[t].P);
+  free(paramc);
+  for (int c = 0; c < N_OTYPE; c++)
+    { for (int t = 0; t < NTHREADS; t++)
+        free(paramm[c].fnames[t]);
+      free(paramm[c].fnames);
+      free(paramm[c].final);
+    }
+  free(paramm);
+  free(path);
+  free(root);
+  free(FK_ROOT);
+  free(threads);
+  free_emodel(emodel);
+
+  Catenate(NULL,NULL,NULL,NULL);
+  Numbered_Suffix(NULL,0,NULL);
+  free(Prog_Name);
+
+  return 0;
 }
