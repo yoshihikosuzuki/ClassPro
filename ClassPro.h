@@ -5,12 +5,10 @@
 // -------- DEBUG FLAGS ---------- //
 
 #define DUP_PROFILE
-#define WRITE_TRACK
-#define PARALLEL_WRITE
+#undef PARALLEL_WRITE
 #define NREAD_PWRITE 100
 
 #define DEBUG
-
 #undef DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_CTX

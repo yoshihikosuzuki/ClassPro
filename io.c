@@ -14,7 +14,7 @@
 #include "DB.h"
 #include "ClassPro.h"
 
-#define BUF_SIZE 4096
+#define BUF_SIZE 4096   // TODO: consider large buffer size for speed?
 
 void *merge_anno(void *arg)
 { Merge_Arg  *data     = (Merge_Arg *)arg;
@@ -67,11 +67,14 @@ void *merge_anno(void *arg)
       unlink(onames[i]);
     }
   fclose(f);
-  
-  if (rename(onames[0],ofinal) == -1)
-    { fprintf(stderr,"Cannot rename %s to %s [errno=%d]\n",onames[0],ofinal,errno);
+
+  char *command = Malloc(sizeof(char)*(strlen(onames[0])+strlen(ofinal)+10),"Allocating command");
+  sprintf(command,"mv %s %s",onames[0],ofinal);
+  if (system(command) == -1)
+    { fprintf(stderr,"Cannot mv %s to %s\n",onames[0],ofinal);
       exit(1);
     }
+  free(command);
 
   return (NULL);
 }
@@ -107,11 +110,14 @@ void *merge_files(void *arg)
       unlink(onames[i]);
     }
   fclose(f);
-  
-  if (rename(onames[0],ofinal) == -1)
-    { fprintf(stderr,"Cannot rename %s to %s [errno=%d]\n",onames[0],ofinal,errno);
+
+  char *command = Malloc(sizeof(char)*(strlen(onames[0])+strlen(ofinal)+10),"Allocating command");
+  sprintf(command,"mv %s %s",onames[0],ofinal);
+  if (system(command) == -1)
+    { fprintf(stderr,"Cannot mv %s to %s\n",onames[0],ofinal);
       exit(1);
     }
+  free(command);
 
   return (NULL);
 }
@@ -130,14 +136,16 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
   char     *name   = arg->snames[0];
   char     *path   = PathTo(name);
   char     *root   = Root(name,NULL);
-  const int MAX_FN = strlen(path)+strlen(root)+14+10;   // 14 for "/." & ".class.xxxx."; 10 for thread ID & '\0'
-
+  
+  // 14 for "/." & ".class.xxxx."; 10 for thread ID & '\0'
+  const int MAX_FN = MAX(strlen(path),strlen(arg->tmp_path))+strlen(root)+14+10;
+  
   // Set output file names (for both scattering and merging)
   for (int c = 0; c < N_OTYPE; c++)
     { paramm[c].onames = Malloc(sizeof(char *)*arg->nthreads,"Allocating fnames");
       for (int t = 0; t < arg->nthreads; t++)
         { paramm[c].onames[t] = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
-          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",path,osep[c],root,osuf[c],t+1);
+          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",arg->tmp_path,osep[c],root,osuf[c],t+1);
         }
 
       paramm[c].ofinal = Malloc(sizeof(char)*MAX_FN,"Allocating fname");

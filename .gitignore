@@ -1,10 +1,7 @@
-CoverRate
-Classifier
-DropContext
-Homex*
+ClassPro
+Classifier.old.c
 hoge.c
 a.out
-Classifier.old.c
 
 # Prerequisites
 *.d

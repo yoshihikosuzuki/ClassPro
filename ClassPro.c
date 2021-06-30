@@ -274,7 +274,7 @@ static Arg *parse_arg(int argc, char *argv[])
         free(root);
       }
     if (idx == N_EXT || fid < 0)
-      { fprintf(stderr,"Cannot open %s as a .db|.dam or .f{ast}[aq][.gz] file\n",arg->snames[0]);
+      { fprintf(stderr,"Cannot open %s as a .db|.dam or .f{ast}[aq][.gz] file\n",argv[1]);
         exit(1);
       }
     close(fid);
