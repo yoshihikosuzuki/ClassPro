@@ -2,9 +2,11 @@
 #define _CLASSPRO
 
 
+// -------- DEBUG FLAGS ---------- //
+
 #define DUP_PROFILE
 #define WRITE_TRACK
-#undef PARALLEL_WRITE
+#define PARALLEL_WRITE
 #define NREAD_PWRITE 100
 
 #define DEBUG
@@ -22,6 +24,8 @@
 #define DEBUG_SLIP
 #undef DEBUG_MERGE
 
+// ------------------------------- //
+
 
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
@@ -33,13 +37,12 @@
  ********************************************************************************************/
 
 extern char *Usage;
-extern int   VERBOSE;
-extern int   NTHREADS;
-extern int   NREADS;
-extern int   NPARTS;
-extern int   FIND_SEEDS;
-extern int   READ_LEN;
+extern int   DEFAULT_NTHREADS;
 extern int   DEFAULT_RLEN;
+extern char *DEFAULT_TMP_PATH;
+
+extern bool VERBOSE;
+extern int  READ_LEN;
 
 /*******************************************************************************************
  *
@@ -141,30 +144,44 @@ void free_emodel(Error_Model *emodel);
  *
  ********************************************************************************************/
 
-#define N_EXT 9
-
+#define N_EXT 10
 extern char *EXT[N_EXT];
 
 enum Otype { CLASS, DATA, ANNO, N_OTYPE };
 
 extern char *osep[N_OTYPE];
 extern char *osuf[N_OTYPE];
+extern bool  oann[N_OTYPE];
 extern bool  obin[N_OTYPE];
 
 typedef struct
-  { char **fnames;
-    char  *final;
-    int    N;
-    bool   is_binary;
-  } Merge_Arg;
+  { int    verbose;      // `-v` option
+    int    nthreads;     // `-T` option
+    int    cov;          // `-c` option
+    int    rlen;         // `-r` option
+    bool   find_seeds;   // `-s` option
+    int    nreads;       // Total number of reads in all input files
+    int    nparts;       // Number of reads per thread
+    char  *tmp_path;     // `-P` option
+    char  *fk_root;      // `-N` option
+    char **snames;       // `<source>`; List of input sequence file names
+    int    nfiles;       // Length of `snames`
+    bool   is_db;        // .db or .dam input?
+  } Arg;   // Command-line arguments + alpha
+
+typedef struct
+  { char **onames;   // List of intermediate output file names per thread
+    char  *ofinal;   // Name of final output file
+    int    nfiles;   // Number of intermediate output files
+    bool   is_bin;   // Binary file?
+  } Merge_Arg;   // defined for each `Otype`
 
 void *merge_anno(void *arg);
 
 void *merge_files(void *arg);
 
-void prepare_db(char *path, char *root, Class_Arg *paramc);
+void prepare_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm);
 
-void prepare_fx(char *fnames[], int nfiles, Class_Arg *paramc, char *path, char *root);
-
+void free_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm);
 
 #endif // _CLASSPRO

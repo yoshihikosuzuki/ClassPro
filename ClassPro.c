@@ -16,12 +16,9 @@
 
 #define THREAD pthread_t
 
-int       VERBOSE;
-int       NTHREADS;
-int       NREADS;
-int       NPARTS;
-int       FIND_SEEDS;
-int       READ_LEN;
+bool VERBOSE;
+int  READ_LEN;
+bool IS_DB;
 
 static void *kmer_class_thread(void *arg)
 { Class_Arg     *data   = (Class_Arg *)arg;
@@ -190,12 +187,6 @@ static void *kmer_class_thread(void *arg)
       fflush(stderr);
 #endif
 
-  // .db
-  //if (strcmp(ext,".db") == 0)
-    { Close_DB(db);
-      Free_DB_Stub(stub);
-    }
-
   fclose(data->cfile);
   fclose(data->afile);
   fclose(data->dfile);
@@ -220,226 +211,244 @@ static void *kmer_class_thread(void *arg)
   return (NULL);
 }
 
-int main(int argc, char *argv[])
-{ char          *path, *root, *ext;
-  char          *FK_ROOT;
-  char         **fnames;
-  int            nfiles;
+static Arg *parse_arg(int argc, char *argv[])
+{ Arg   *arg = Malloc(sizeof(Arg),"Allocating Arg");
+  int    i, j, k;
+  int    flags[128];
+  char  *eptr;
+  (void) flags;
 
-  Profile_Index *P;
-  Error_Model   *emodel;
+  ARG_INIT("ClassPro");
 
-  THREAD        *threads;
-  Class_Arg     *paramc;
-  Merge_Arg     *paramm;
-
-  int            COVERAGE;
-
-  // Parse options
-  { int    i, j, k;
-    int    flags[128];
-    char  *eptr;
-
-    (void) flags;
-
-    ARG_INIT("ClassPro");
-
-    NTHREADS = 4;
-    COVERAGE = -1;
-    READ_LEN = DEFAULT_RLEN;
-    FK_ROOT   = NULL;
-
-    j = 1;
-    for (i = 1; i < argc; i++)
-      if (argv[i][0] == '-')
-        switch (argv[i][1])
-        { default:
-            ARG_FLAGS("vs")
-            break;
-          case 'T':
-            ARG_POSITIVE(NTHREADS,"Number of threads")
-            break;
-          case 'c':
-            ARG_NON_NEGATIVE(COVERAGE,"Estimated k-mer coverage")
-            break;
-          case 'r':
-            ARG_POSITIVE(READ_LEN,"Average read length")
-            break;
-          case 'N':
-            FK_ROOT = argv[i]+2;
-            break;
-        }
-      else
-        argv[j++] = argv[i];
-    argc = j;
-
-    VERBOSE    = flags['v'];
-    FIND_SEEDS = flags['s'];
-
-    if (argc < 2)
-      { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
-        exit (1);
+  arg->nthreads = DEFAULT_NTHREADS;
+  arg->cov      = -1;
+  arg->rlen     = DEFAULT_RLEN;
+  arg->tmp_path = DEFAULT_TMP_PATH;
+  arg->fk_root  = NULL;
+  
+  j = 1;
+  for (i = 1; i < argc; i++)
+    if (argv[i][0] == '-')
+      switch (argv[i][1])
+      { default:
+          ARG_FLAGS("vs")
+          break;
+        case 'T':
+          ARG_POSITIVE(arg->nthreads,"Number of threads")
+          break;
+        case 'c':
+          ARG_NON_NEGATIVE(arg->cov,"Estimated k-mer coverage")
+          break;
+        case 'r':
+          ARG_POSITIVE(arg->rlen,"Average read length")
+          break;
+        case 'N':
+          arg->fk_root = argv[i]+2;
+          break;
+        case 'P':
+          arg->tmp_path = argv[i]+2;
+          break;
       }
-    nfiles = argc-1;
-    fnames = argv+1;
+    else
+      argv[j++] = argv[i];
+  argc = j;
 
-    int fid, idx;
+  if (argc < 2)
+    { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+      exit (1);
+    }
 
-    path = PathTo(fnames[0]);
+  arg->verbose    = flags['v'];
+  arg->find_seeds = flags['s'];
+  arg->nfiles     = argc-1;
+  
+  { int    fid, idx;
+    char  *path, *root;
+
+    path = PathTo(argv[1]);
+
     for (idx = 0; idx < N_EXT; idx++)
-      { root  = Root(fnames[0],EXT[idx]);
+      { root  = Root(argv[1],EXT[idx]);
         fid   = open(Catenate(path,"/",root,EXT[idx]),O_RDONLY);
         if (fid >= 0) break;
         free(root);
       }
     if (idx == N_EXT || fid < 0)
-      { fprintf(stderr,"Cannot open %s as a .f{ast}[aq][.gz]|db file\n",fnames[0]);
+      { fprintf(stderr,"Cannot open %s as a .db|.dam or .f{ast}[aq][.gz] file\n",arg->snames[0]);
         exit(1);
       }
     close(fid);
-    ext = EXT[idx];
 
-    if (FK_ROOT == NULL)
-      FK_ROOT = Strdup(Catenate(path,"/",root,""),"FK_ROOT");
+    arg->is_db = (idx <= 1) ? true : false;
 
-    if (VERBOSE)
-      { fprintf(stderr,"# of input files = %d (first file: path = %s  root = %s  ext = %s)\n",nfiles,path,root,ext);
-        fprintf(stderr,"FASTK root = %s\n",FK_ROOT);
+    if (arg->is_db && arg->nfiles != 1)
+      { fprintf(stderr,"Only single file is accepted for .db and .dam\n");
+        exit(1);
+      }
+
+    if (arg->fk_root == NULL)
+      arg->fk_root = Strdup(Catenate(path,"/",root,""),"Set fk_root");
+
+    if (arg->verbose)
+      fprintf(stderr,"%d seq files (first file: path = %s  root = %s  ext = %s)\nFASTK root = %s\n",
+                     arg->nfiles,path,root,EXT[idx],arg->fk_root);
+
+    // Set full path
+    arg->snames = Malloc(sizeof(char *)*arg->nfiles,"Allocating fnames");
+    for (int i = 0; i < arg->nfiles; i++)
+      { path = PathTo(argv[i+1]);
+        root = Root(argv[i+1],EXT[idx]);
+        arg->snames[i] = Strdup(Catenate(path,"/",root,EXT[idx]),"Set fname");
+        if ((fid = open(arg->snames[i],O_RDONLY)) == -1)
+          { fprintf(stderr,"Cannot open %s [errno=%d]\n",arg->snames[i],errno);
+            exit(1);
+          }
+        close(fid);
       }
   }
 
-  // Precompute
-  { if ((P = Open_Profiles(FK_ROOT)) == NULL)
-      { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,FK_ROOT);
+  { char  *cpath, *spath;
+    DIR   *dirp;
+
+    if (arg->tmp_path[0] != '/')
+      { cpath = getcwd(NULL,0);
+        if (arg->tmp_path[0] == '.')
+          { if (arg->tmp_path[1] == '/')
+              spath = Catenate(cpath,arg->tmp_path+1,"","");
+            else if (arg->tmp_path[1] == '\0')
+              spath = cpath;
+            else
+              { fprintf(stderr,"\n%s: -P option: . not followed by /\n",Prog_Name);
+                exit (1);
+              }
+          }
+        else
+          spath = Catenate(cpath,"/",arg->tmp_path,"");
+        arg->tmp_path = Strdup(spath,"Allocating path");
+        free(cpath);
+      }
+    else
+      arg->tmp_path = Strdup(arg->tmp_path,"Allocating path");
+
+    if ((dirp = opendir(arg->tmp_path)) == NULL)
+      { fprintf(stderr,"\n%s: -P option: cannot open directory %s\n",Prog_Name,arg->tmp_path);
         exit (1);
       }
-    NREADS = P->nreads;
-    NPARTS = (NREADS / NTHREADS) + (NREADS % NTHREADS == 0 ? 0 : 1);
-    if (VERBOSE)
-      fprintf(stderr,"NREADS=%d, NPARTS=%d\n",NREADS,NPARTS);
+    closedir(dirp);
+    
+    if (arg->verbose)
+      fprintf(stderr,"Temp dir path = %s\n",arg->tmp_path);
+  }
+
+  return arg;
+}
+
+static void free_arg(Arg *arg)
+{ for (int i = 0; i < arg->nfiles; i++)
+    free(arg->snames[i]);
+  free(arg->snames);
+  free(arg->fk_root);
+  free(arg->tmp_path);
+  free(arg);
+
+  return;
+}
+
+int main(int argc, char *argv[])
+{ Arg           *arg     = parse_arg(argc,argv);;
+  Class_Arg     *paramc  = Malloc(sizeof(Class_Arg)*arg->nthreads,"Allocating class args");;
+  Merge_Arg     *paramm  = Malloc(sizeof(Merge_Arg)*N_OTYPE,"Allocate merge args");;
+  THREAD        *threads = Malloc(sizeof(THREAD)*arg->nthreads,"Allocating class threads");
+  
+  VERBOSE  = arg->verbose;
+  READ_LEN = arg->rlen;
+  
+  Profile_Index *P;
+  Error_Model   *emodel;
+
+  // Precompute etc.
+  { if ((P = Open_Profiles(arg->fk_root)) == NULL)
+      { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,arg->fk_root);
+        exit (1);
+      }
+    arg->nreads = P->nreads;
+    arg->nparts = (arg->nreads / arg->nthreads) + (arg->nreads % arg->nthreads == 0 ? 0 : 1);
+
+    if (arg->verbose)
+      fprintf(stderr,"Total # of reads = %d, # of reads per thread = %d\n",arg->nreads,arg->nparts);
 
     precompute_probs();
-    process_global_hist(FK_ROOT,COVERAGE);
+    process_global_hist(arg->fk_root,arg->cov);
     emodel = calc_init_thres();
   }
 
-  // Invoke classification 
-  { threads = Malloc(sizeof(THREAD)*NTHREADS,"Allocating class threads");
-    paramc  = Malloc(sizeof(Class_Arg)*NTHREADS,"Allocating class args");
-    paramm  = Malloc(sizeof(Merge_Arg)*N_OTYPE,"Allocate merge args");
+  // Set file names, file pointers, etc. for each thread
+  { for (int t = 0; t < arg->nthreads; t++)
+      { paramc[t].emodel = emodel;
 
-    if (strcmp(ext,".db") == 0)
-      { if (nfiles != 1)
-          { fprintf(stderr,"# of input .db files must be 1\n");
-            exit(1);
-          }
-        prepare_db(path,root,paramc);
-      }
-    else
-      prepare_fx(fnames,nfiles,paramc,path,root);
-
-    // NOTE: 14 for "/." and ".class.[anno|data]." and 10 for "`t`" and '\0'
-    const int fnlen = strlen(path)+strlen(root)+14+10;
-    for (int c = 0; c < N_OTYPE; c++)
-      { paramm[c].fnames = Malloc(sizeof(char *)*NTHREADS,"Allocating fnames");
-        for (int t = 0; t < NTHREADS; t++)
-          { paramm[c].fnames[t] = Malloc(sizeof(char)*fnlen,"Allocating fname");
-            sprintf(paramm[c].fnames[t],"%s%s%s%s.%d",path,osep[c],root,osuf[c],t+1);
-          }
-        paramm[c].final = Malloc(sizeof(char)*fnlen,"Allocating fname");
-        sprintf(paramm[c].final,"%s%s%s%s",path,osep[c],root,osuf[c]);
-        paramm[c].N         = NTHREADS;
-        paramm[c].is_binary = obin[c];
-      }
-
-    for (int t = 0; t < NTHREADS; t++)
-      { 
 #ifndef DUP_PROFILE
         paramc[t].P = (t == 0) ? P : Clone_Profiles(P);
 #else
-        paramc[t].P = (t == 0) ? P : Open_Profiles(FK_ROOT);
+        paramc[t].P = (t == 0) ? P : Open_Profiles(arg->fk_root);
 #endif
         if (paramc[t].P == NULL)
-          { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,FK_ROOT);
+          { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,arg->fk_root);
             exit (1);
           }
-
-        paramc[t].emodel = emodel;
-        paramc[t].beg    = t*NPARTS;
-        paramc[t].end    = MIN((t+1)*NPARTS,NREADS);
-
-        paramc[t].afile = Fopen(paramm[ANNO].fnames[t],"wb");
-        paramc[t].dfile = Fopen(paramm[DATA].fnames[t],"wb");
-        if (paramc[t].afile == NULL || paramc[t].dfile == NULL)
-          { fprintf(stderr,"Cannot open .class.*.%d\n",t+1);
-            exit (1);
-          }
-
-#ifndef PARALLEL_WRITE
-        paramc[t].cfile  = Fopen(paramm[CLASS].fnames[t],"w");
-        if (paramc[t].cfile == NULL)
-          { fprintf(stderr,"Cannot open *.class.%d\n",t+1);
-            exit (1);
-          }
-#endif
       }
 
-    { const int idx  = 0;
-      const int size = 8;
-      fwrite(&NREADS,sizeof(int),1,paramc[0].afile);
-      fwrite(&size,sizeof(int),1,paramc[0].afile);
-      fwrite(&idx,sizeof(int64),1,paramc[0].afile);
-    }
-
-    if (VERBOSE)
-      fprintf(stderr,"Classifying %d-mers%s...\n",P->kmer,FIND_SEEDS ? "" : " & Finding seeds");
-
-    for (int t = 1; t < NTHREADS; t++)
-      pthread_create(threads+t,NULL,kmer_class_thread,paramc+t);
-    kmer_class_thread(paramc);
-    for (int t = 1; t < NTHREADS; t++)
-      pthread_join(threads[t],NULL);
-
-    { int i;
-
-#ifndef PARALLEL_WRITE
-      const int c = CLASS;
-#else
-      const int c = DATA;
-#endif
-
-      if (VERBOSE)
-        fprintf(stderr,"\nMerging files...\n");
-
-      for (i = 0; i+1 < NTHREADS && c+i < ANNO; i++)
-        pthread_create(threads+i+1,NULL,merge_files,paramm+c+i);
-      for (; c+i < ANNO; i++)
-        merge_files(paramm+c+i);
-      merge_anno(paramm+ANNO);
-      for (i = 0; i+1 < NTHREADS && c+i < ANNO; i++)
-        pthread_join(threads[i+1],NULL);
-    }
+    prepare_param(arg,paramc,paramm);
   }
 
-  for (int t = NTHREADS-1; t >= 0; t--)
-    Free_Profiles(paramc[t].P);
-  free(paramc);
-  for (int c = 0; c < N_OTYPE; c++)
-    { for (int t = 0; t < NTHREADS; t++)
-        free(paramm[c].fnames[t]);
-      free(paramm[c].fnames);
-      free(paramm[c].final);
-    }
-  free(paramm);
-  free(path);
-  free(root);
-  free(FK_ROOT);
-  free(threads);
-  free_emodel(emodel);
+  // Classification
+  { if (arg->verbose)
+      fprintf(stderr,"Classifying %d-mers%s...\n",P->kmer,arg->find_seeds ? "" : " & Finding seeds");
 
-  Catenate(NULL,NULL,NULL,NULL);
-  Numbered_Suffix(NULL,0,NULL);
-  free(Prog_Name);
+    for (int t = 1; t < arg->nthreads; t++)
+      pthread_create(threads+t,NULL,kmer_class_thread,paramc+t);
+    kmer_class_thread(paramc);
+    for (int t = 1; t < arg->nthreads; t++)
+      pthread_join(threads[t],NULL);
+  }
+
+  // Merging intermediate files into final output
+  { int i;
+#ifndef PARALLEL_WRITE
+    const int b = CLASS;
+#else
+    const int b = CLASS+1;
+#endif
+    const int e = (arg->is_db) ? N_OTYPE : CLASS+1;
+
+    if (VERBOSE)
+      fprintf(stderr,"\nMerging files...\n");
+
+    for (i = 0; i+1 < arg->nthreads && b+i < e-1; i++)
+      { if (oann[b+i])
+          pthread_create(threads+i+1,NULL,merge_anno,paramm+b+i);
+        else
+          pthread_create(threads+i+1,NULL,merge_files,paramm+b+i);
+      }
+    for (; b+i < e; i++)
+      { if (oann[b+i])
+          merge_anno(paramm+b+i);
+        else
+          merge_files(paramm+b+i);
+      }
+    for (i = 0; i+1 < arg->nthreads && b+i < e-1; i++)
+      pthread_join(threads[i+1],NULL);
+  }
+
+  // Epilogue
+  { free(threads);
+    free_emodel(emodel);
+    free_param(arg,paramc,paramm);
+    free_arg(arg);
+
+    Catenate(NULL,NULL,NULL,NULL);
+    Numbered_Suffix(NULL,0,NULL);
+    free(Prog_Name);
+  }
 
   return 0;
 }

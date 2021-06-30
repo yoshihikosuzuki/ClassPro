@@ -18,21 +18,21 @@
 
 void *merge_anno(void *arg)
 { Merge_Arg  *data     = (Merge_Arg *)arg;
-  char      **fnames   = data->fnames;
-  char       *final    = data->final;
-  int         N        = data->N;
+  char      **onames   = data->onames;
+  char       *ofinal   = data->ofinal;
+  int         N        = data->nfiles;
 
   FILE      *f, *g;
   int64      offset, idx;
 
-  f = Fopen(fnames[0],"ab+");
+  f = Fopen(onames[0],"ab+");
   if (f == NULL)
-    { fprintf(stderr,"Cannot open %s [errno=%d]\n",fnames[0],errno);
+    { fprintf(stderr,"Cannot open %s [errno=%d]\n",onames[0],errno);
       exit(1);
     }
 
   if (fseek(f,-(long)sizeof(int64),SEEK_END) == -1)
-    { fprintf(stderr,"Skip header failed for %s [errno=%d]\n",fnames[0],errno);
+    { fprintf(stderr,"Skip header failed for %s [errno=%d]\n",onames[0],errno);
       exit(1);
     }
 
@@ -43,9 +43,9 @@ void *merge_anno(void *arg)
     }
 
   for (int i = 1; i < N; i++)
-    { g = Fopen(fnames[i],"rb");
+    { g = Fopen(onames[i],"rb");
       if (g == NULL)
-        { fprintf(stderr,"Cannot open %s [errno=%d]\n",fnames[i],errno);
+        { fprintf(stderr,"Cannot open %s [errno=%d]\n",onames[i],errno);
           exit(1);
         }
 
@@ -64,12 +64,12 @@ void *merge_anno(void *arg)
       offset = idx;
 
       fclose(g);
-      unlink(fnames[i]);
+      unlink(onames[i]);
     }
   fclose(f);
   
-  if (rename(fnames[0],final) == -1)
-    { fprintf(stderr,"Cannot rename %s to %s [errno=%d]\n",fnames[0],final,errno);
+  if (rename(onames[0],ofinal) == -1)
+    { fprintf(stderr,"Cannot rename %s to %s [errno=%d]\n",onames[0],ofinal,errno);
       exit(1);
     }
 
@@ -78,25 +78,25 @@ void *merge_anno(void *arg)
 
 void *merge_files(void *arg)
 { Merge_Arg  *data      = (Merge_Arg *)arg;
-  char      **fnames    = data->fnames;
-  char       *final     = data->final;
-  int         N         = data->N;
-  bool        is_binary = data->is_binary;
+  char      **onames    = data->onames;
+  char       *ofinal    = data->ofinal;
+  int         N         = data->nfiles;
+  bool        is_bin    = data->is_bin;
 
   FILE *f, *g;
   char buf[BUF_SIZE];
   int n;
 
-  f = Fopen(fnames[0], is_binary ? "ab+" : "a+");
+  f = Fopen(onames[0], is_bin ? "ab+" : "a+");
   if (f == NULL)
-    { fprintf(stderr,"Cannot open %s [errno=%d]\n",fnames[0],errno);
+    { fprintf(stderr,"Cannot open %s [errno=%d]\n",onames[0],errno);
       exit(1);
     }
 
   for (int i = 1; i < N; i++)
-    { g = Fopen(fnames[i], is_binary ? "rb" : "r");
+    { g = Fopen(onames[i], is_bin ? "rb" : "r");
       if (g == NULL)
-        { fprintf(stderr,"Cannot open %s [errno=%d]\n",fnames[i],errno);
+        { fprintf(stderr,"Cannot open %s [errno=%d]\n",onames[i],errno);
           exit(1);
         }
 
@@ -104,12 +104,12 @@ void *merge_files(void *arg)
         fwrite(buf,sizeof(char),n,f);
 
       fclose(g);
-      unlink(fnames[i]);
+      unlink(onames[i]);
     }
   fclose(f);
   
-  if (rename(fnames[0],final) == -1)
-    { fprintf(stderr,"Cannot rename %s to %s [errno=%d]\n",fnames[0],final,errno);
+  if (rename(onames[0],ofinal) == -1)
+    { fprintf(stderr,"Cannot rename %s to %s [errno=%d]\n",onames[0],ofinal,errno);
       exit(1);
     }
 
@@ -125,36 +125,71 @@ static inline int ndigit(int n)
   return d;
 }
 
-void prepare_db(char *path, char *root, Class_Arg *paramc)
-{ char *name = Catenate(path,"/",root,".db");
+static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
+{ // NOTE: Assuming there is only a single input .db or .dam file
+  char     *name   = arg->snames[0];
+  char     *path   = PathTo(name);
+  char     *root   = Root(name,NULL);
+  const int MAX_FN = strlen(path)+strlen(root)+14+10;   // 14 for "/." & ".class.xxxx."; 10 for thread ID & '\0'
 
-  for (int t = 0; t < NTHREADS; t++)
+  // Set output file names (for both scattering and merging)
+  for (int c = 0; c < N_OTYPE; c++)
+    { paramm[c].onames = Malloc(sizeof(char *)*arg->nthreads,"Allocating fnames");
+      for (int t = 0; t < arg->nthreads; t++)
+        { paramm[c].onames[t] = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
+          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",path,osep[c],root,osuf[c],t+1);
+        }
+
+      paramm[c].ofinal = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
+      sprintf(paramm[c].ofinal,"%s%s%s%s",path,osep[c],root,osuf[c]);
+
+      paramm[c].nfiles = arg->nthreads;
+      paramm[c].is_bin = obin[c];
+    }
+
+  // Set variables used during multi-thread classification
+  for (int t = 0; t < arg->nthreads; t++)
     { paramc[t].db = Malloc(sizeof(DAZZ_DB),"Allocating dazz db");
       if (Open_DB(name,paramc[t].db) < 0)
-        { fprintf(stderr,"%s: Cannot open %s.db\n",Prog_Name,name);
+        { fprintf(stderr,"%s: Cannot open %s\n",Prog_Name,name);
           exit (1);
         }
       if (paramc[t].db->part > 0)
         { fprintf(stderr,"%s: Cannot be called on a block\n",Prog_Name);
           exit (1);
         }
-      if (NREADS != paramc[t].db->nreads)
-        { fprintf(stderr,"Inconsistent # of reads: .prof (%d) != .db (%d)\n",NREADS,paramc[t].db->nreads);
+      if (arg->nreads != paramc[t].db->nreads)
+        { fprintf(stderr,"Inconsistent # of reads: .prof (%d) != .db (%d)\n",arg->nreads,paramc[t].db->nreads);
           exit(1);
         }
       paramc[t].stub = Read_DB_Stub(name,DB_STUB_NREADS|DB_STUB_PROLOGS);
+
+      paramc[t].afile = Fopen(paramm[ANNO].onames[t],"wb");
+      paramc[t].dfile = Fopen(paramm[DATA].onames[t],"wb");
+      if (paramc[t].afile == NULL || paramc[t].dfile == NULL)
+        { fprintf(stderr,"Cannot open .*.class.*.%d\n",t+1);
+          exit (1);
+        }
+
+      paramc[t].beg = t*arg->nparts;
+      paramc[t].end = MIN((t+1)*arg->nparts,arg->nreads);
     }
 
-#ifdef PARALLEL_WRITE
+  // Set output file pointer to *.class file per thread
+#ifndef PARALLEL_WRITE
+  for (int t = 0; t < arg->nthreads; t++)
+    { paramc[t].cfile = Fopen(paramm[CLASS].onames[t],"w");
+      if (paramc[t].cfile == NULL)
+        { fprintf(stderr,"Cannot open %s\n",paramm[CLASS].onames[t]);
+          exit (1);
+        }
+    }
+#else
   DAZZ_STUB  *stub;
   DAZZ_READ  *r;
   char      **flist;
   int        *findx;
   int         map;
-  char       *cfname;
-  int64       csize;
-  int64       coffset[NTHREADS];
-  int         hsize, id;
 
   stub      = Read_DB_Stub(name,DB_STUB_NREADS|DB_STUB_PROLOGS);
   flist     = stub->prolog;
@@ -162,62 +197,101 @@ void prepare_db(char *path, char *root, Class_Arg *paramc)
   findx[-1] = 0;
   map       = 0;
 
+  int64       csize;
+  int64       coffset[arg->nthreads];
+  int         hsize, id;
+
   // Total file size and write start position per thread
   csize = 0;
   id    = 0;
-  for (int t = 0; t < NTHREADS; t++)
+  for (int t = 0; t < arg->nthreads; t++)
     { coffset[t] = csize;
-      for (int i = 0; i < NPARTS && id < NREADS; i++, id++)
+      for (int i = 0; i < arg->nparts && id < arg->nreads; i++, id++)
         { while (id < findx[map-1])
             map -= 1;
           while (id >= findx[map])
             map += 1;
 
           r      = paramc[0].db->reads+id;
-          hsize  = strlen(flist[map])+ndigit(r->origin)+ndigit(r->fpulse)+ndigit(r->fpulse+r->rlen);
+          hsize  = strlen(flist[map])+ndigit(r->origin)+ndigit(r->fpulse)+ndigit(r->fpulse+r->rlen);   // TODO: .dam
           csize += 2*(r->rlen)+hsize+9;   // NOTE: 9 bytes for {@,/,/,_,\n,\n,+,\n,\n}
         }
     }
   Free_DB_Stub(stub);
 
   // Allocate file size
-  cfname = Catenate(path,"/",root,".class");
-  int fd = open(cfname,O_CREAT|O_TRUNC|O_WRONLY,S_IRWXU);
+  int fd = open(paramm[CLASS].ofinal,O_CREAT|O_TRUNC|O_WRONLY,S_IRWXU);
   if (fd == -1)
-    { fprintf(stderr,"open/create fail [errono=%d]\n",errno);
+    { fprintf(stderr,"Cannot open/create %s [errono=%d]\n",paramm[CLASS].ofinal,errno);
       exit(1);
     }
   if (VERBOSE)
-    { fprintf(stderr,"Allocating %lld bytes for %s\n",csize,cfname);
+    { fprintf(stderr,"Allocating %lld bytes for %s\n",csize,paramm[CLASS].ofinal);
       fflush(stderr);
     }
-  int ret = posix_fallocate(fd,0,sizeof(char)*csize);
+  int ret = posix_fallocate(fd,0,sizeof(char)*csize);   // TODO: macOS
   if (ret != 0)
-    { fprintf(stderr,"fallocate fail [ret=%d]\n",ret);
+    { fprintf(stderr,"fallocate failed [ret=%d]\n",ret);
       exit(1);
     }
   close(fd);
 
-  // Prepare file descripter + offset per thread
-  for (int t = 0; t < NTHREADS; t++)
-    { paramc[t].cfile = Fopen(cfname,"w");
+  // Move file pointer to the offset for each thread
+  for (int t = 0; t < arg->nthreads; t++)
+    { paramc[t].cfile = Fopen(paramm[CLASS].ofinal,"w");
       if (paramc[t].cfile == NULL)
-        { fprintf(stderr,"open fail [errono=%d]\n",errno);
+        { fprintf(stderr,"Cannot open %s [errono=%d]\n",paramm[CLASS].ofinal,errno);
           exit(1);
         }
       if (fseek(paramc[t].cfile,sizeof(char)*coffset[t],SEEK_SET) == -1)
-        { fprintf(stderr,"fseek fail [errono=%d]\n",errno);
+        { fprintf(stderr,"fseek failed [errono=%d]\n",errno);
           exit(1);
         }
     }
-
-  free(cfname);
 #endif
+
+  // Write header info to .anno.1
+  { const int idx  = 0;
+    const int size = 8;
+    fwrite(&arg->nreads,sizeof(int),1,paramc[0].afile);
+    fwrite(&size,sizeof(int),1,paramc[0].afile);
+    fwrite(&idx,sizeof(int64),1,paramc[0].afile);
+  }
 
   return;
 }
 
-void prepare_fx(char *fnames[], int nfiles, Class_Arg *paramc, char *path, char *root)
+static void prepare_fx(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
 {
+  return;
+}
+
+void prepare_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
+{ if (arg->is_db)
+    prepare_db(arg,paramc,paramm);
+  else
+    prepare_fx(arg,paramc,paramm);
+
+  return;
+}
+
+void free_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
+{ for (int t = arg->nthreads-1; t >= 0; t--)
+    { Free_Profiles(paramc[t].P);
+      if (arg->is_db)
+        { Close_DB(paramc[t].db);
+          Free_DB_Stub(paramc[t].stub);
+        }
+    }
+  free(paramc);
+
+  for (int c = 0; c < N_OTYPE; c++)
+    { for (int t = 0; t < arg->nthreads; t++)
+        free(paramm[c].onames[t]);
+      free(paramm[c].onames);
+      free(paramm[c].ofinal);
+    }
+  free(paramm);
+
   return;
 }
