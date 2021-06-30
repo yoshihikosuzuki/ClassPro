@@ -142,17 +142,19 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
   
   // Set output file names (for both scattering and merging)
   for (int c = 0; c < N_OTYPE; c++)
-    { paramm[c].onames = Malloc(sizeof(char *)*arg->nthreads,"Allocating fnames");
+    { Out_Info o = O_INFO[c];
+      
+      paramm[c].onames = Malloc(sizeof(char *)*arg->nthreads,"Allocating fnames");
       for (int t = 0; t < arg->nthreads; t++)
         { paramm[c].onames[t] = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
-          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",arg->tmp_path,osep[c],root,osuf[c],t+1);
+          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",arg->tmp_path,o.sep,root,o.suf,t+1);
         }
 
       paramm[c].ofinal = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
-      sprintf(paramm[c].ofinal,"%s%s%s%s",path,osep[c],root,osuf[c]);
+      sprintf(paramm[c].ofinal,"%s%s%s%s",path,o.sep,root,o.suf);
 
       paramm[c].nfiles = arg->nthreads;
-      paramm[c].is_bin = obin[c];
+      paramm[c].is_bin = o.is_bin;
     }
 
   // Set variables used during multi-thread classification

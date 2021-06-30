@@ -28,19 +28,13 @@
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 
-/*******************************************************************************************
- *
- *  GLOBAL VARIABLES
- *
- ********************************************************************************************/
-
 extern char *Usage;
 extern int   DEFAULT_NTHREADS;
 extern int   DEFAULT_RLEN;
 extern char *DEFAULT_TMP_PATH;
 
-extern bool VERBOSE;
-extern int  READ_LEN;
+extern bool  VERBOSE;
+extern int   READ_LEN;
 
 /*******************************************************************************************
  *
@@ -116,16 +110,17 @@ void remove_slip(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], char *crack);
  *
  ********************************************************************************************/
 
+// Arguments for classification (defined for each thread)
 typedef struct
-  { Profile_Index *P;        // To fetch profile
-    Error_Model   *emodel;   // Error models for {HP, DS, TS}
-    DAZZ_DB       *db;       // To fetch sequence from .db
-    DAZZ_STUB     *stub;
+  { Profile_Index *P;        // To fetch count profiles
+    Error_Model   *emodel;   // Error models for low-complexity bases
+    DAZZ_DB       *db;       // To fetch nucleotide sequences from .db/.dam
+    DAZZ_STUB     *stub;     // To fetch read names from .db/.dam
     int            beg;      // Reads in [beg,end) are classified in this thread
     int            end;
-    FILE          *afile;
-    FILE          *dfile;
-    FILE          *cfile;
+    FILE          *cfile;    // *.class (fastq-like ascii flie)
+    FILE          *dfile;    // .*.class.data (DAZZ_DB track; only when input is .db/.dam)
+    FILE          *afile;    // .*.class.anno (DAZZ_DB track; only when input is .db/.dam)
   } Class_Arg;
 
 void precompute_probs();
@@ -142,16 +137,23 @@ void free_emodel(Error_Model *emodel);
  *
  ********************************************************************************************/
 
+// Supported extension names for input sequence files
 #define N_EXT 10
 extern char *EXT[N_EXT];
 
+// Output file types and their attributes
 enum Otype { CLASS, DATA, ANNO, N_OTYPE };
 
-extern char *osep[N_OTYPE];
-extern char *osuf[N_OTYPE];
-extern bool  oann[N_OTYPE];
-extern bool  obin[N_OTYPE];
+typedef struct
+  { char *sep;
+    char *suf;
+    bool  is_anno;
+    bool  is_bin;
+  } Out_Info;
 
+extern Out_Info O_INFO[N_OTYPE];
+
+// Command-line arguments + alpha
 typedef struct
   { int    verbose;      // `-v` option
     int    nthreads;     // `-T` option
@@ -165,21 +167,22 @@ typedef struct
     char **snames;       // `<source>`; List of input sequence file names
     int    nfiles;       // Length of `snames`
     bool   is_db;        // .db or .dam input?
-  } Arg;   // Command-line arguments + alpha
+  } Arg;
 
+// Arguments for merging intermediate output files (defined for each `Otype`)
 typedef struct
   { char **onames;   // List of intermediate output file names per thread
     char  *ofinal;   // Name of final output file
     int    nfiles;   // Number of intermediate output files
     bool   is_bin;   // Binary file?
-  } Merge_Arg;   // defined for each `Otype`
-
-void *merge_anno(void *arg);
-
-void *merge_files(void *arg);
+  } Merge_Arg;
 
 void prepare_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm);
 
 void free_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm);
+
+void *merge_anno(void *arg);
+
+void *merge_files(void *arg);
 
 #endif // _CLASSPRO

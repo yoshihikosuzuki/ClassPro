@@ -262,6 +262,7 @@ static Arg *parse_arg(int argc, char *argv[])
   arg->find_seeds = flags['s'];
   arg->nfiles     = argc-1;
   
+  // Input file names
   { int    fid, idx;
     char  *path, *root;
 
@@ -307,6 +308,7 @@ static Arg *parse_arg(int argc, char *argv[])
       }
   }
 
+  // Temparary directory
   { char  *cpath, *spath;
     DIR   *dirp;
 
@@ -424,13 +426,13 @@ int main(int argc, char *argv[])
       fprintf(stderr,"\nMerging files...\n");
 
     for (i = 0; i+1 < arg->nthreads && b+i < e-1; i++)
-      { if (oann[b+i])
+      { if (O_INFO[b+i].is_anno)
           pthread_create(threads+i+1,NULL,merge_anno,paramm+b+i);
         else
           pthread_create(threads+i+1,NULL,merge_files,paramm+b+i);
       }
     for (; b+i < e; i++)
-      { if (oann[b+i])
+      { if (O_INFO[b+i].is_anno)
           merge_anno(paramm+b+i);
         else
           merge_files(paramm+b+i);
