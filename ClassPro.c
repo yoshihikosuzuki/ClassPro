@@ -152,6 +152,42 @@ static void *kmer_class_thread(void *arg)
 
       plen = Fetch_Profile(P,(int64)id,rlen_max,profile);
 
+      if (rlen <= Km1)
+        {
+#ifndef NO_WRITE
+          if (IS_DB)
+            { if (!IS_DAM)
+                { while (id < findx[map-1])
+                    map -= 1;
+                  while (id >= findx[map])
+                    map += 1;
+                  sprintf(header,"%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
+                }
+              else
+                { FSEEKO(hdrs,r->coff,SEEK_SET)
+                  FGETS(header,MAX_NAME,hdrs)
+                  header[strlen(header)-1] = '\0';
+                }
+            }
+
+          buf[rlen] = '\0';
+
+          fprintf(data->cfile,"@%s\n%s\n+\n%s\n",header,seq,buf);
+
+          buf[rlen] = 'N';
+
+          if (IS_DB)
+            { // Output binary to DAZZ track
+              Compress_Read(rlen,track);
+              int t = COMPRESSED_LEN(rlen);
+              fwrite(track,1,t,data->dfile);
+              idx += t;
+              fwrite(&idx,sizeof(int64),1,data->afile);
+            }
+#endif
+          continue;
+        }
+
       if (rlen != plen+Km1)
         { fprintf(stderr,"Read %d: rlen (%d) != plen+Km1 (%d)\n",id+1,rlen,plen+Km1);
           exit(1);
@@ -213,9 +249,8 @@ static void *kmer_class_thread(void *arg)
 
       if (IS_DB)
         { // Output binary to DAZZ track
-          int l = plen + Km1;
-          Compress_Read(l,track);
-          int t = COMPRESSED_LEN(l);
+          Compress_Read(rlen,track);
+          int t = COMPRESSED_LEN(rlen);
           fwrite(track,1,t,data->dfile);
           idx += t;
           fwrite(&idx,sizeof(int64),1,data->afile);

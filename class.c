@@ -1512,7 +1512,7 @@ static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *ce
     { double _lambda = (double)cov[s]*(ri.i-rintvl[p].j+1)/READ_LEN;
       logp_sf = logp_skellam(ri.ci-rintvl[p].cj,_lambda);
       if (rintvl[p].j == ri.i)
-        logp_er = log(MIN(cerror[ri.i][OTHERS][DROP],cerror[ri.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
+        logp_er = log(MAX(cerror[ri.i][OTHERS][DROP],cerror[ri.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
       else
         logp_er = -INFINITY;
       logp_l = MAX(logp_sf,logp_er);
@@ -1525,7 +1525,7 @@ static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *ce
     { double _lambda = (double)cov[s]*(rintvl[n].i-ri.j+1)/READ_LEN;
       logp_sf = logp_skellam(rintvl[n].ci-ri.cj,_lambda);
       if (ri.j == rintvl[n].i)
-        logp_er = log(MIN(cerror[ri.j][OTHERS][DROP],cerror[ri.j][OTHERS][GAIN]));
+        logp_er = log(MAX(cerror[ri.j][OTHERS][DROP],cerror[ri.j][OTHERS][GAIN]));
       else
         logp_er = -INFINITY;
       logp_r = MAX(logp_sf,logp_er);
@@ -1858,7 +1858,7 @@ static double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 *profil
     { double _lambda = (double)cov[s]*(I.i-intvl[p].j+1)/READ_LEN;
       logp_sf = logp_skellam(profile[I.i]-profile[intvl[p].j-1],_lambda);
       if (intvl[p].j == I.i)
-        logp_er = log(MIN(perror[I.i][OTHERS][DROP],perror[I.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
+        logp_er = log(MAX(perror[I.i][OTHERS][DROP],perror[I.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
       else
         logp_er = -INFINITY;
       logp_l = MAX(logp_sf,logp_er);
@@ -1871,7 +1871,7 @@ static double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 *profil
     { double _lambda = (double)cov[s]*(intvl[n].i-I.j+1)/READ_LEN;
       logp_sf = logp_skellam(profile[intvl[n].i]-profile[I.j-1],_lambda);
       if (I.j == intvl[n].i)
-        logp_er = log(MIN(perror[I.j][OTHERS][DROP],perror[I.j][OTHERS][GAIN]));
+        logp_er = log(MAX(perror[I.j][OTHERS][DROP],perror[I.j][OTHERS][GAIN]));
       else
         logp_er = -INFINITY;
       logp_r = MAX(logp_sf,logp_er);

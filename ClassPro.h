@@ -13,19 +13,19 @@
 #undef DEBUG_SMALL
 #define NREAD_SMALL 100
 
-#define DEBUG
-#define DEBUG_ITER
-#undef DEBUG_BINOM
-#undef DEBUG_CTX
-#undef DEBUG_ERROR
-#undef DEBUG_INTVL
-#undef DEBUG_COR
-#undef DEBUG_PMM
-#undef DEBUG_PROB
-#undef DEBUG_REL
-#undef DEBUG_UNREL
-#undef DEBUG_SLIP
-#undef DEBUG_MERGE
+// #define DEBUG
+// #define DEBUG_ITER
+// #undef DEBUG_BINOM
+// #undef DEBUG_CTX
+// #undef DEBUG_ERROR
+// #define DEBUG_INTVL
+// #undef DEBUG_COR
+// #undef DEBUG_PMM
+// #define DEBUG_PROB
+// #define DEBUG_REL
+// #define DEBUG_UNREL
+// #define DEBUG_SLIP
+// #undef DEBUG_MERGE
 
 #if defined(DEBUG_SINGLE) || defined(DEBU_SMALL)
 #define NO_WRITE
