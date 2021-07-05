@@ -20,7 +20,7 @@ static const int    MAX_NITER             = 10;
 static int          MIN_CNT_CHANGE        = 2;       // Every count change at a wall must be > this
 static int          MAX_CNT_CHANGE        = 5;       // Every count change > this becomes a wall candidate   // TODO: change to sqrt(H-cov?)
 static const double N_SIGMA_R             = 3;
-static const double N_SIGMA_R_U           = 1;
+static const double N_SIGMA_R_U           = 3;
 static const int    N_BASE_EST            = 1000;
 static const int    N_BASE_EST_MIN        = 1;
 static const int    N_INTVL_EST           = 5;
@@ -1881,14 +1881,17 @@ static double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 *profil
 #endif
     }
 
-  if (p < 0 && n >= N)   // TODO: allow short, isolated intervals to be H/D?
-    { logp_l = logp_poisson(profile[I.i],cov[s]);
-      logp_r = logp_poisson(profile[I.j-1],cov[s]);
+  if (p < 0 || n >= N)
+    { if (p < 0 && n >= N)   // TODO: allow short, isolated intervals to be H/D?
+        { logp_l = logp_poisson(profile[I.i],cov[s]);
+          logp_r = logp_poisson(profile[I.j-1],cov[s]);
+        }
+      else if (p < 0)
+        logp_l = logp_r;
+      else if (n >= N)
+        logp_r = logp_l;
+      return logp_l+logp_r;
     }
-  else if (p < 0)
-    logp_l = logp_r;
-  else if (n >= N)
-    logp_r = logp_l;
 
   //return MIN(logp_l,logp_r);
   return MAX(logp_l,logp_r);

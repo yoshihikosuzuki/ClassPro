@@ -14,8 +14,6 @@
 #include "DB.h"
 #include "ClassPro.h"
 
-#define BUF_SIZE 4096   // TODO: consider large buffer size for speed?
-
 void *merge_anno(void *arg)
 { Merge_Arg  *data     = (Merge_Arg *)arg;
   char      **onames   = data->onames;
@@ -87,7 +85,7 @@ void *merge_files(void *arg)
   bool        is_bin    = data->is_bin;
 
   FILE *f, *g;
-  char buf[BUF_SIZE];
+  char *buf = Malloc(sizeof(char)*MERGE_BUF_SIZE,"Allocating merge buffer");
   int n;
 
   f = Fopen(onames[0], is_bin ? "ab+" : "a+");
@@ -103,13 +101,14 @@ void *merge_files(void *arg)
           exit(1);
         }
 
-      while ((n = fread(buf,sizeof(char),BUF_SIZE,g)) > 0)
+      while ((n = fread(buf,sizeof(char),MERGE_BUF_SIZE,g)) > 0)
         fwrite(buf,sizeof(char),n,f);
 
       fclose(g);
       unlink(onames[i]);
     }
   fclose(f);
+  free(buf);
 
   char *command = Malloc(sizeof(char)*(strlen(onames[0])+strlen(ofinal)+10),"Allocating command");
   sprintf(command,"mv %s %s",onames[0],ofinal);
@@ -172,19 +171,31 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
         { fprintf(stderr,"Inconsistent # of reads: .prof (%d) != .db (%d)\n",arg->nreads,paramc[t].db->nreads);
           exit(1);
         }
-      paramc[t].stub = Read_DB_Stub(name,DB_STUB_NREADS|DB_STUB_PROLOGS);
+      if (!arg->is_dam)
+        paramc[t].stub = Read_DB_Stub(name,DB_STUB_NREADS|DB_STUB_PROLOGS);
+      else
+        { char *hdrs_name = Strdup(Catenate(path,"/.",root,".hdr"),"Allocating header file name");
+          paramc[t].hdrs  = Fopen(hdrs_name,"r");
+          if (hdrs_name == NULL || paramc[t].hdrs == NULL)
+            { fprintf(stderr,"Cannot open .hdr file %s [errno=%d]\n",hdrs_name,errno);
+              exit (1);
+            }
+          free(hdrs_name);
+        }
+      paramc[t].beg = t*arg->nparts;
+      paramc[t].end = MIN((t+1)*arg->nparts,arg->nreads);
 
+#ifndef NO_WRITE
       paramc[t].afile = Fopen(paramm[ANNO].onames[t],"wb");
       paramc[t].dfile = Fopen(paramm[DATA].onames[t],"wb");
       if (paramc[t].afile == NULL || paramc[t].dfile == NULL)
         { fprintf(stderr,"Cannot open .*.class.*.%d\n",t+1);
           exit (1);
         }
-
-      paramc[t].beg = t*arg->nparts;
-      paramc[t].end = MIN((t+1)*arg->nparts,arg->nreads);
+#endif
     }
 
+#ifndef NO_WRITE
   // Set output file pointer to *.class file per thread
 #ifndef PARALLEL_WRITE
   for (int t = 0; t < arg->nthreads; t++)
@@ -195,21 +206,36 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
         }
     }
 #else
-  DAZZ_STUB  *stub;
   DAZZ_READ  *r;
+  char        header[MAX_NAME];
+
+  DAZZ_STUB  *stub;
   char      **flist;
   int        *findx;
   int         map;
 
-  stub      = Read_DB_Stub(name,DB_STUB_NREADS|DB_STUB_PROLOGS);
-  flist     = stub->prolog;
-  findx     = stub->nreads;
-  findx[-1] = 0;
-  map       = 0;
+  FILE       *hdrs = NULL;
+  char       *hdrs_name = NULL;
 
   int64       csize;
   int64       coffset[arg->nthreads];
-  int         hsize, id;
+  int         id;
+
+  if (!arg->is_dam)
+    { stub      = Read_DB_Stub(name,DB_STUB_NREADS|DB_STUB_PROLOGS);
+      flist     = stub->prolog;
+      findx     = stub->nreads;
+      findx[-1] = 0;
+      map       = 0;
+    }
+  else
+    { hdrs_name = Strdup(Catenate(path,"/.",root,".hdr"),"Allocating header file name");
+      hdrs      = Fopen(hdrs_name,"r");
+      if (hdrs_name == NULL || hdrs == NULL)
+        { fprintf(stderr,"Cannot open .hdr file %s [errno=%d]\n",hdrs_name,errno);
+          exit (1);
+        }
+    
 
   // Total file size and write start position per thread
   csize = 0;
@@ -217,17 +243,28 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
   for (int t = 0; t < arg->nthreads; t++)
     { coffset[t] = csize;
       for (int i = 0; i < arg->nparts && id < arg->nreads; i++, id++)
-        { while (id < findx[map-1])
-            map -= 1;
-          while (id >= findx[map])
-            map += 1;
-
-          r      = paramc[0].db->reads+id;
-          hsize  = strlen(flist[map])+ndigit(r->origin)+ndigit(r->fpulse)+ndigit(r->fpulse+r->rlen);   // TODO: .dam
-          csize += 2*(r->rlen)+hsize+9;   // NOTE: 9 bytes for {@,/,/,_,\n,\n,+,\n,\n}
+        { r = paramc[0].db->reads+id;
+          if (!arg->is_dam)
+            { while (id < findx[map-1])
+                map -= 1;
+              while (id >= findx[map])
+                map += 1;
+              sprintf(header,"%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
+            }
+          else
+            { FSEEKO(hdrs,r->coff,SEEK_SET)
+              FGETS(header,MAX_NAME,hdrs)
+              header[strlen(header)-1] = '\0';
+            }
+          csize += 2*(r->rlen)+strlen(header)+6;   // NOTE: 6 bytes for {@,\n,\n,+,\n,\n}
         }
     }
-  Free_DB_Stub(stub);
+  if (!arg->is_dam)
+    Free_DB_Stub(stub);
+  else
+    { fclose(hdrs);
+      free(hdrs_name);
+    }
 
   // Allocate file size
   int fd = open(paramm[CLASS].ofinal,O_CREAT|O_TRUNC|O_WRONLY,S_IRWXU);
@@ -267,6 +304,7 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
     fwrite(&size,sizeof(int),1,paramc[0].afile);
     fwrite(&idx,sizeof(int64),1,paramc[0].afile);
   }
+#endif // NO_WRITE
 
   return;
 }
@@ -290,7 +328,10 @@ void free_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
     { Free_Profiles(paramc[t].P);
       if (arg->is_db)
         { Close_DB(paramc[t].db);
-          Free_DB_Stub(paramc[t].stub);
+          if (!arg->is_dam)
+            Free_DB_Stub(paramc[t].stub);
+          else
+            fclose(paramc[t].hdrs);
         }
     }
   free(paramc);

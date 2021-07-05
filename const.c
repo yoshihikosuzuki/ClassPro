@@ -21,6 +21,8 @@ int      DEFAULT_NTHREADS = 4;
 int      DEFAULT_RLEN     = 20000;
 char    *DEFAULT_TMP_PATH = "./";
 
+int      MERGE_BUF_SIZE   = 4096;   // TODO: consider large buffer size for speed?
+
 char     stoc[N_STATE]    = {'E','R','H','D'};
 
 char    *EXT[N_EXT]       = { ".db", ".dam",

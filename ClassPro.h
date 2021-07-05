@@ -8,8 +8,13 @@
 #undef PARALLEL_WRITE
 #define NREAD_PWRITE 100
 
+#undef DEBUG_SINGLE
+#define DEBUG_SINGLE_ID 11
+#undef DEBUG_SMALL
+#define NREAD_SMALL 100
+
 #define DEBUG
-#undef DEBUG_ITER
+#define DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_CTX
 #undef DEBUG_ERROR
@@ -19,8 +24,14 @@
 #undef DEBUG_PROB
 #undef DEBUG_REL
 #undef DEBUG_UNREL
-#define DEBUG_SLIP
+#undef DEBUG_SLIP
 #undef DEBUG_MERGE
+
+#if defined(DEBUG_SINGLE) || defined(DEBU_SMALL)
+#define NO_WRITE
+#else
+#undef NO_WRITE
+#endif
 
 // ------------------------------- //
 
@@ -28,13 +39,20 @@
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 
+// Constants
+#define MAX_NAME 10000   // .db, .dam header
+
 extern char *Usage;
 extern int   DEFAULT_NTHREADS;
 extern int   DEFAULT_RLEN;
 extern char *DEFAULT_TMP_PATH;
+extern int   MERGE_BUF_SIZE;   // for `merge_files`
 
+// Used during multi-thread classification
 extern bool  VERBOSE;
 extern int   READ_LEN;
+extern bool  IS_DB;
+extern bool  IS_DAM;
 
 /*******************************************************************************************
  *
@@ -115,7 +133,8 @@ typedef struct
   { Profile_Index *P;        // To fetch count profiles
     Error_Model   *emodel;   // Error models for low-complexity bases
     DAZZ_DB       *db;       // To fetch nucleotide sequences from .db/.dam
-    DAZZ_STUB     *stub;     // To fetch read names from .db/.dam
+    DAZZ_STUB     *stub;     // To fetch read names from .db
+    FILE          *hdrs;     // To fetch read names from .dam
     int            beg;      // Reads in [beg,end) are classified in this thread
     int            end;
     FILE          *cfile;    // *.class (fastq-like ascii flie)
@@ -167,6 +186,7 @@ typedef struct
     char **snames;       // `<source>`; List of input sequence file names
     int    nfiles;       // Length of `snames`
     bool   is_db;        // .db or .dam input?
+    bool   is_dam;       // .dam?
   } Arg;
 
 // Arguments for merging intermediate output files (defined for each `Otype`)
