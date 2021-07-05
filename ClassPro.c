@@ -486,7 +486,7 @@ int main(int argc, char *argv[])
 
   // Classification
   { if (arg->verbose)
-      fprintf(stderr,"Classifying %d-mers%s...\n",P->kmer,arg->find_seeds ? "" : " & Finding seeds");
+      fprintf(stderr,"Classifying %d-mers%s...\n",P->kmer,arg->find_seeds ? " & Finding seeds" : "");
 
     for (int t = 1; t < arg->nthreads; t++)
       pthread_create(threads+t,NULL,kmer_class_thread,paramc+t);

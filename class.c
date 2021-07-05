@@ -1233,7 +1233,7 @@ int pmm_vi(uint16 *profile, uint16 *nprofile, int plen, double *eta, double lamb
     }
 #endif
 
-  // H-cov = D-cov / 2 if they are too close
+  // H-cov = D-cov / 2 if they are too close   // FIXME: H or D must be decided based on the global depth
   if (fabs(lambda[0]-lambda[1]) < sqrt(lambda[1]))
     { lambda[0] = lambda[1]/2;
 #if defined(DEBUG_ITER) || defined(DEBUG_PMM)
