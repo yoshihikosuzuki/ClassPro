@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -g -O0 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 LDFLAGS = -lpthread -lm
-ALL = ClassPro prof2class
+ALL = ClassPro prof2class ClassGS
 
 all: $(ALL)
 
@@ -13,6 +13,9 @@ ClassPro: ClassPro.c ClassPro.h class.c io.c const.c libfastk.c libfastk.h DB.c 
 
 prof2class: prof2class.c libfastk.c libfastk.h DB.c DB.h QV.c QV.h
 	$(CC) $(CFLAGS) -o $@ prof2class.c libfastk.c DB.c QV.c $(LDFLAGS)
+
+ClassGS: ClassGS.c libfastk.c libfastk.h DB.c DB.h QV.c QV.h
+	$(CC) $(CFLAGS) -o $@ ClassGS.c libfastk.c DB.c QV.c $(LDFLAGS)
 
 clean:
 	rm -f $(ALL)

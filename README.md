@@ -2,7 +2,7 @@
 
 A k-mer classification program using the [FASTK](https://github.com/thegenemyers/FASTK) software suite developed by Gene Myers.
 
-```bash
+```text
 ClassPro [-vs] [-c<int>] [-r<int(20000)>] [-N<fastk_root>]
          [-P<tmp_dir(/tmp)>] [-T<int(4)>]
          <source>[.db|.f[ast][aq][.gz]] ...
