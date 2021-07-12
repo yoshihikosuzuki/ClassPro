@@ -8,20 +8,20 @@
 #undef PARALLEL_WRITE
 #define NREAD_PWRITE 100
 
-#undef DEBUG_SINGLE
-#define DEBUG_SINGLE_ID 11
-#undef DEBUG_SMALL
-#define NREAD_SMALL 100
+// #define DEBUG_SINGLE
+// #define DEBUG_SINGLE_ID 29
+// #undef DEBUG_SMALL
+// #define NREAD_SMALL 100
 
 // #define DEBUG
 // #define DEBUG_ITER
 // #undef DEBUG_BINOM
 // #undef DEBUG_CTX
 // #undef DEBUG_ERROR
-// #define DEBUG_INTVL
+// #undef DEBUG_INTVL
 // #undef DEBUG_COR
 // #undef DEBUG_PMM
-// #define DEBUG_PROB
+// #undef DEBUG_PROB
 // #define DEBUG_REL
 // #define DEBUG_UNREL
 // #define DEBUG_SLIP
@@ -101,7 +101,7 @@ typedef struct
   { int    i;
     int    j;
     int    ci;   // corrected counts
-    int    cj;
+    int    cj;   // @ j-1
     char   asgn;
   } Rel_Intvl;
 

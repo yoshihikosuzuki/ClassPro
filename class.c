@@ -1233,16 +1233,31 @@ int pmm_vi(uint16 *profile, uint16 *nprofile, int plen, double *eta, double lamb
     }
 #endif
 
-  // H-cov = D-cov / 2 if they are too close   // FIXME: H or D must be decided based on the global depth
+  // H-cov = D-cov / 2 if they are too close
   if (fabs(lambda[0]-lambda[1]) < sqrt(lambda[1]))
-    { lambda[0] = lambda[1]/2;
+    { const double mean = (lambda[0]+lambda[1])/2;
+      const double diff_h = fabs(mean-lambda_prior[0]);
+      const double diff_d = fabs(mean-lambda_prior[1]);
+      if (diff_h < diff_d)
+        { lambda[1] = lambda[0]*2;
 #if defined(DEBUG_ITER) || defined(DEBUG_PMM)
-      fprintf(stderr,"H=D/2 ");
+          fprintf(stderr,"D=H*2 ");
 #ifndef DEBUG_ITER
-      fprintf(stderr,"\n");
+          fprintf(stderr,"\n");
 #endif
-      fflush(stderr);
+          fflush(stderr);
 #endif
+        }
+      else
+        { lambda[0] = lambda[1]/2;
+#if defined(DEBUG_ITER) || defined(DEBUG_PMM)
+          fprintf(stderr,"H=D/2 ");
+#ifndef DEBUG_ITER
+          fprintf(stderr,"\n");
+#endif
+          fflush(stderr);
+#endif
+        }
     }
 
   return N;
@@ -1400,7 +1415,7 @@ static double calc_logp_e(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror,
   double logp_po, logp_er;
   
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"  [ERROR]\n");
+  fprintf(stderr,"  [E]");
 #endif
 
   logp_po = logp_poisson(ri.ci,cov[ERROR]);
@@ -1410,7 +1425,7 @@ static double calc_logp_e(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror,
   logp_l = MAX(logp_po,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [L] logp(PO)=%lf, logp(ER)=%lf\n",logp_po,logp_er);
+  fprintf(stderr," [L] logp(PO) = %.1lf, logp(ER) = %.1lf\n",logp_po,logp_er);
 #endif
 
   logp_po = logp_poisson(ri.cj,cov[ERROR]);
@@ -1420,7 +1435,7 @@ static double calc_logp_e(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror,
   logp_r = MAX(logp_po,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [R] logp(PO)=%lf, logp(ER)=%lf\n",logp_po,logp_er);
+  fprintf(stderr,"      [R] logp(PO) = %.1lf, logp(ER) = %.1lf\n",logp_po,logp_er);
 #endif
 
   return logp_l+logp_r;
@@ -1432,13 +1447,13 @@ static double calc_logp_r(int idx, Rel_Intvl *rintvl, int M, int cov[])
   double logp_sf, logp_er;
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"  [REPEAT]\n");
+  fprintf(stderr,"  [R]");
 #endif
 
   if (MAX(ri.ci,ri.cj) >= cov[REPEAT])
     { 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-      fprintf(stderr,"    Larger than R-cov\n");
+      fprintf(stderr," (Larger than R-cov)\n          logp(R) = 0.\n");
 #endif
       return 0.;
     }
@@ -1483,7 +1498,7 @@ static double calc_logp_r(int idx, Rel_Intvl *rintvl, int M, int cov[])
   logp_l = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [L] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+  fprintf(stderr," [L] logp(SF) = %.1lf, logp(ER) = %.1lf\n",logp_sf,logp_er);
 #endif
 
   _lambda = (double)nc*(nb-ri.i+1)/READ_LEN;
@@ -1492,7 +1507,7 @@ static double calc_logp_r(int idx, Rel_Intvl *rintvl, int M, int cov[])
   logp_r = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [R] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+  fprintf(stderr,"      [R] logp(SF) = %.1lf, logp(ER) = %.1lf\n",logp_sf,logp_er);
 #endif
 
   return MAX(logp_l,logp_r);
@@ -1518,7 +1533,7 @@ static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *ce
       logp_l = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [L] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+  fprintf(stderr," [L] logp(SF) = %.1lf, logp(ER) = %.1lf\n",logp_sf,logp_er);
 #endif
     }
   if (n < M)
@@ -1531,7 +1546,7 @@ static double calc_logp_hd(int s, int idx, Rel_Intvl *rintvl, int M, P_Error *ce
       logp_r = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [R] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+  fprintf(stderr,"      [R] logp(SF) = %.1lf, logp(ER) = %.1lf\n",logp_sf,logp_er);
 #endif
     }
 
@@ -1551,31 +1566,53 @@ static double calc_logp_h(int idx, Rel_Intvl *rintvl, int M, P_Error *cerror, in
 { Rel_Intvl ri = rintvl[idx];
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"  [HAPLO]\n");
+  fprintf(stderr,"  [H]");
 #endif
 
-  int nn_idx[2];
+  // FIXME: This hard assignment must be inappropriate
+  /*int nn_idx[2];
   nn_intvl(idx,rintvl,M,DIPLO,nn_idx);
   int p = nn_idx[0];
   int n = nn_idx[1];
   if (p >= 0)
     { if (rintvl[p].cj < ri.ci)
-        return -INFINITY;
+        { 
+#if defined(DEBUG_REL) && defined(DEBUG_PROB)
+          fprintf(stderr," (Start > than left nearest D)\n          logp(H) = -inf\n");
+#endif
+          return -INFINITY;
+        }
     }
   if (n < M)
     { if (ri.cj > rintvl[n].ci)
-        return -INFINITY;
+        { 
+#if defined(DEBUG_REL) && defined(DEBUG_PROB)
+          fprintf(stderr," (End > than right nearest D)\n          logp(H) = -inf\n");
+#endif
+          return -INFINITY;
+        }
     }
   
+  // FIXME: This hard assignment must be inappropriate
   int est_cnt[2];
   est_cnt_intvl(idx,rintvl,M,DIPLO,est_cnt);
   int pc = (int)((double)est_cnt[0]/1.25);   // TODO: change to N-sigma
   int nc = (int)((double)est_cnt[1]/1.25);
 
   if (pc > 0 && pc <= ri.ci)
-    return -INFINITY;
+    { 
+#if defined(DEBUG_REL) && defined(DEBUG_PROB)
+      fprintf(stderr," (Start count > left est D / 1.25)\n          logp(H) = -inf\n");
+#endif
+      return -INFINITY;
+    }
   if (nc > 0 && nc <= ri.cj)
-    return -INFINITY;
+    { 
+#if defined(DEBUG_REL) && defined(DEBUG_PROB)
+      fprintf(stderr," (End count > right est D / 1.25)\n          logp(H) = -inf\n");
+#endif
+      return -INFINITY;
+    }*/
 
   return calc_logp_hd(HAPLO,idx,rintvl,M,cerror,cov);
 }
@@ -1584,10 +1621,10 @@ static double calc_logp_d(int idx, Rel_Intvl *rintvl, int M, P_Error *cerror, in
 { Rel_Intvl ri = rintvl[idx];
 
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
-  fprintf(stderr,"  [DIPLO]\n");
+  fprintf(stderr,"  [D]");
 #endif
  
-  int est_cnt[2];
+  /*int est_cnt[2];
   est_cnt_intvl(idx,rintvl,M,HAPLO,est_cnt);
   int pc = (int)((double)est_cnt[0]*1.25);   // TODO: change to N-sigma
   int nc = (int)((double)est_cnt[1]*1.25);
@@ -1599,54 +1636,68 @@ static double calc_logp_d(int idx, Rel_Intvl *rintvl, int M, P_Error *cerror, in
   else if (nc < 0)
    nc = pc;
   
+  // FIXME: This hard assignment must be inappropriate
   if (ri.ci < pc && ri.cj < nc)
-    return -INFINITY;
+    { 
+#if defined(DEBUG_REL) && defined(DEBUG_PROB)
+      fprintf(stderr," (Start count < left est H*1.25 && End count < right est H*1.25)\n          logp(D) = -inf\n");
+#endif
+      return -INFINITY;
+    }*/
 
   return calc_logp_hd(DIPLO,idx,rintvl,M,cerror,cov);
 }
 
-static int update_state(int idx, Rel_Intvl *rintvl, int M, int plen, P_Error *perror, P_Error *cerror, int cov[])
-{ char   s, smax = N_STATE;
-  double logp, logpmax = -INFINITY;
+static inline bool update_state(int idx, Rel_Intvl *rintvl, int M, int plen, P_Error *perror, P_Error *cerror, int cov[], int counter)
+{ int    s, smax = N_STATE;
+  double logpmax = -INFINITY;
+  double logps[N_STATE];
+
+#ifdef DEBUG_REL
+  { Rel_Intvl r    = rintvl[idx];
+    const int iter = abs(counter);
+    const char dir = (counter>0) ? 'U' : 'D';
+    fprintf(stderr,"\n%d%c RI[%d] ",iter,dir,idx);
+    fprintf(stderr,"@ %d -> %d: %d -> %d (%c)\n",r.i,r.j,r.ci,r.cj,stoc[(unsigned char)r.asgn]);
+  }
+#endif
 
   for (s = ERROR; s <= DIPLO; s++)
     { if (s == ERROR)
-        logp = calc_logp_e(idx,rintvl,plen,perror,cov);
+        logps[s] = calc_logp_e(idx,rintvl,plen,perror,cov);
       else if (s == REPEAT)
-        logp = calc_logp_r(idx,rintvl,M,cov);
+        logps[s] = calc_logp_r(idx,rintvl,M,cov);
       else if (s == HAPLO)
-        logp = calc_logp_h(idx,rintvl,M,cerror,cov);
+        logps[s] = calc_logp_h(idx,rintvl,M,cerror,cov);
       else
-        logp = calc_logp_d(idx,rintvl,M,cerror,cov);
+        logps[s] = calc_logp_d(idx,rintvl,M,cerror,cov);
 
-      if (logp > logpmax)
+      if (logps[s] > logpmax)
         { smax = s;
-          logpmax = logp;
+          logpmax = logps[s];
         }
-
-#if defined(DEBUG_REL) && defined(DEBUG_PROB)
-      fprintf(stderr,"idx=%d (%d,%d), s=%d, logp=%lf\n",idx,rintvl[idx].i,rintvl[idx].j,s,logp);
-#endif
     }
 
-#ifdef DEBUG
-  if (smax > 4)
-    { fprintf(stderr,"No valid probability for interval %d\n",idx);
-      exit(1);
-    }
-#endif
+  /* TODO: refactor to something like this:
+  for (s = ERROR; s <= DIPLO; s++)
+    if ( (logps[s] = calc_logp[s](idx,rintvl,plen,M,perror,cerror,cov)) > logpmax)
+      { smax = s;
+        logpmax = logps[s];
+      }
+  */
 
-  int changed = 0;
-  if (rintvl[idx].asgn != smax)
-    {
+  bool changed = (rintvl[idx].asgn != smax);
+
 #ifdef DEBUG_REL
-      fprintf(stderr,"state updated @ %d: %d -> %d\n",idx,rintvl[idx].asgn,smax);
+  fprintf(stderr,"  logP: ");
+  for (s = ERROR; s <= DIPLO; s++)
+    fprintf(stderr,"%c=%4.lf%s",stoc[(unsigned char)s],logps[s],(s<DIPLO)?", ":"");
+  if (changed)
+    fprintf(stderr," *** %c -> %c",stoc[(unsigned char)rintvl[idx].asgn],stoc[(unsigned char)smax]);
+  fprintf(stderr,"\n");
 #endif
 
-      rintvl[idx].asgn = smax;
-      changed = 1;
-    }
-
+  rintvl[idx].asgn = smax;
   return changed;
 }
 
@@ -1694,25 +1745,18 @@ void classify_reliable(Rel_Intvl *rintvl, int M, Intvl *intvl, int N, int plen, 
   qsort(iord,M,sizeof(Intvl_IC),compare_iic);
 
   int counter;
+  bool changed;
   for (counter = 0; counter < MAX_NITER; counter++)
-    {
-#ifdef DEBUG_REL
-      fprintf(stderr,"[%dU]\n",counter+1);
-#endif
-      int changed = 0;
+    { changed = false;
       for (int i = M - 1; i >= 0; i--)
-        if (update_state(iord[i].idx,rintvl,M,plen,perror,cerror,cov))
-          changed = 1;
+        if (update_state(iord[i].idx,rintvl,M,plen,perror,cerror,cov,counter+1))
+          changed = true;
       if (!changed) break;
 
-#ifdef DEBUG_REL
-      fprintf(stderr,"[%dD]\n",counter+1);
-#endif
-
-      changed = 0;
+      changed = false;
       for (int i = 0; i < M; i++)
-        if (update_state(iord[i].idx,rintvl,M,plen,perror,cerror,cov))
-          changed = 1;
+        if (update_state(iord[i].idx,rintvl,M,plen,perror,cerror,cov,-counter-1))
+          changed = true;
       if (!changed) break;
     }
 
