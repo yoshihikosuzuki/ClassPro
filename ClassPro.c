@@ -200,9 +200,7 @@ static void *kmer_class_thread(void *arg)
             }
 
           buf[rlen] = '\0';
-
           fprintf(data->cfile,"%s\n%s\n+\n%s\n",header,seq,buf);
-
           buf[rlen] = 'N';
 
           if (IS_DB)

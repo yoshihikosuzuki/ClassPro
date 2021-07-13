@@ -13,11 +13,12 @@
 
 #define MAX_NAME 10000
 
-static char *Usage = "<source_root> <E/H_thres> <H/D_thres> <D/R_thres>";
+static char *Usage = "<source_root> <E/H_thres> <H/D_thres> <D/R_thres> > out.class";
 
 int main(int argc, char *argv[])
 { Profile_Index *P;
 
+  // NOTE: Only DAZZ_DB is accepted
   DAZZ_DB    _db, *db = &_db;
   DAZZ_STUB  *stub = NULL;
   char      **flist;
@@ -66,7 +67,7 @@ int main(int argc, char *argv[])
 
     status = Open_DB(argv[1],db);
     if (status < 0)
-      { fprintf(stderr,"%s: Cannot open %s\n",Prog_Name,argv[1]);
+      { fprintf(stderr,"%s: Cannot open %s as .db/.dam\n",Prog_Name,argv[1]);
         exit (1);
       }
     if (db->part > 0)
@@ -102,7 +103,7 @@ int main(int argc, char *argv[])
 
   { P = Open_Profiles(argv[1]);
     if (P == NULL)
-      { fprintf(stderr,"%s: Cannot open %s\n",Prog_Name,argv[1]);
+      { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,argv[1]);
         exit (1);
       }
     if (db->nreads != P->nreads)
@@ -158,17 +159,18 @@ int main(int argc, char *argv[])
               map -= 1;
             while (id >= findx[map])
               map += 1;
-            sprintf(header,"%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
+            sprintf(header,"@%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
           }
         else
           { FSEEKO(hdrs,r->coff,SEEK_SET)
             FGETS(header,MAX_NAME,hdrs)
             header[strlen(header)-1] = '\0';
+            header[0] = '@';
           }
         
         if (rlen <= Km1)
           { asgn[rlen] = '\0';
-            printf("@%s\n%s\n+\n%s\n",header,seq,asgn);
+            printf("%s\n%s\n+\n%s\n",header,seq,asgn);
             asgn[rlen] = 'N';
             continue;
           }
@@ -186,7 +188,7 @@ int main(int argc, char *argv[])
           }
         asgn[idx] = '\0';
 
-        printf("@%s\n%s\n+\n%s\n",header,seq,asgn);
+        printf("%s\n%s\n+\n%s\n",header,seq,asgn);
       }
     free(profile);
   }
