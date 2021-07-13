@@ -1,6 +1,9 @@
 #ifndef _CLASSPRO
 #define _CLASSPRO
 
+#include <zlib.h>
+#include "kseq.h"
+KSEQ_INIT(gzFile, gzread)
 
 // -------- DEBUG FLAGS ---------- //
 
@@ -9,7 +12,7 @@
 #define NREAD_PWRITE 100
 
 // #define DEBUG_SINGLE
-// #define DEBUG_SINGLE_ID 29
+// #define DEBUG_SINGLE_ID 2
 // #undef DEBUG_SMALL
 // #define NREAD_SMALL 100
 
@@ -132,11 +135,13 @@ void remove_slip(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], char *crack);
 typedef struct
   { Profile_Index *P;        // To fetch count profiles
     Error_Model   *emodel;   // Error models for low-complexity bases
+    int            beg;      // Reads in [beg,end) are classified in this thread
+    int            end;
+    gzFile         fxfp;     // FASTX file pointer                                         // TODO: change to void *Seq_Info
+    kseq_t        *fxseq;    // To fetch reads from FASTX
     DAZZ_DB       *db;       // To fetch nucleotide sequences from .db/.dam
     DAZZ_STUB     *stub;     // To fetch read names from .db
     FILE          *hdrs;     // To fetch read names from .dam
-    int            beg;      // Reads in [beg,end) are classified in this thread
-    int            end;
     FILE          *cfile;    // *.class (fastq-like ascii flie)
     FILE          *dfile;    // .*.class.data (DAZZ_DB track; only when input is .db/.dam)
     FILE          *afile;    // .*.class.anno (DAZZ_DB track; only when input is .db/.dam)

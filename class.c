@@ -18,7 +18,7 @@
 static const int    MAX_N_HC              = 5;
 static const int    MAX_NITER             = 10;
 static int          MIN_CNT_CHANGE        = 2;       // Every count change at a wall must be > this
-static int          MAX_CNT_CHANGE        = 5;       // Every count change > this becomes a wall candidate   // TODO: change to sqrt(H-cov?)
+static int          MAX_CNT_CHANGE        = 5;       // Every count change > this becomes a wall candidate(H-cov?)
 static const double N_SIGMA_R             = 3;
 static const double N_SIGMA_R_U           = 3;
 static const int    N_BASE_EST            = 1000;
@@ -1233,11 +1233,12 @@ int pmm_vi(uint16 *profile, uint16 *nprofile, int plen, double *eta, double lamb
     }
 #endif
 
-  // H-cov = D-cov / 2 if they are too close
+  // Isolate H-cov and D-cov if they are too close
   if (fabs(lambda[0]-lambda[1]) < sqrt(lambda[1]))
     { const double mean = (lambda[0]+lambda[1])/2;
       const double diff_h = fabs(mean-lambda_prior[0]);
       const double diff_d = fabs(mean-lambda_prior[1]);
+
       if (diff_h < diff_d)
         { lambda[1] = lambda[0]*2;
 #if defined(DEBUG_ITER) || defined(DEBUG_PMM)
@@ -1268,6 +1269,8 @@ int pmm_vi(uint16 *profile, uint16 *nprofile, int plen, double *eta, double lamb
  *  REFINE ASSIGNMENT
  *
  ********************************************************************************************/
+
+
 
 static void nn_intvl(int idx, Rel_Intvl *rintvl, int M, char s, int ret[2])
 { int p = idx-1;
@@ -1860,8 +1863,8 @@ static double calc_logp_r_u(int idx, Intvl *intvl, int N, uint16 *profile, int c
   pc = (int)((double)pc*dr_ratio);
   nc = (int)((double)nc*dr_ratio);
 
-  if (pc <= profile[I.i] || profile[I.j-1] >= nc)
-    return 0.;
+  // if (pc <= profile[I.i] || profile[I.j-1] >= nc)
+  //   return 0.;
 
   /*double _lambda;
   _lambda = (double)pc*(ri.i-pe+1)/READ_LEN;
@@ -1948,7 +1951,7 @@ static double calc_logp_h_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Err
   fprintf(stderr,"  [HAPLO]\n");
 #endif
 
-  int est_cnt[2];
+  /*int est_cnt[2];
   est_cnt_intvl_u(idx,intvl,N,profile,DIPLO,est_cnt);
   int pc = (int)((double)est_cnt[0]/1.25);   // TODO: change to N-sigma
   int nc = (int)((double)est_cnt[1]/1.25);
@@ -1956,7 +1959,7 @@ static double calc_logp_h_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Err
   if (pc > 0 && pc <= profile[I.i])
     return -INFINITY;
   if (nc > 0 && nc <= profile[I.j-1])
-    return -INFINITY;
+    return -INFINITY;*/
 
   // TODO: NN H-interval + N-sigma check?
 
@@ -1970,7 +1973,7 @@ static double calc_logp_d_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Err
   fprintf(stderr,"  [DIPLO]\n");
 #endif
  
-  int est_cnt[2];
+  /*int est_cnt[2];
   est_cnt_intvl_u(idx,intvl,N,profile,HAPLO,est_cnt);
   int pc = (int)((double)est_cnt[0]*1.25);   // TODO: change to N-sigma
   int nc = (int)((double)est_cnt[1]*1.25);
@@ -1983,7 +1986,7 @@ static double calc_logp_d_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Err
    nc = pc;
   
   if (profile[I.i] < pc && profile[I.j-1] < nc)
-    return -INFINITY;
+    return -INFINITY;*/
 
   return calc_logp_hd_u(DIPLO,idx,intvl,N,profile,perror,cov);
 }

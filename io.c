@@ -9,7 +9,9 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/stat.h>
+#include <zlib.h>
 
+#include "kseq.h"
 #include "libfastk.h"
 #include "DB.h"
 #include "ClassPro.h"
@@ -249,14 +251,15 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
                 map -= 1;
               while (id >= findx[map])
                 map += 1;
-              sprintf(header,"%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
+              sprintf(header,"@%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
             }
           else
-            { FSEEKO(hdrs,r->coff,SEEK_SET)
+            { // NOTE: '>' is included for .dam
+              FSEEKO(hdrs,r->coff,SEEK_SET)
               FGETS(header,MAX_NAME,hdrs)
               header[strlen(header)-1] = '\0';
             }
-          csize += 2*(r->rlen)+strlen(header)+6;   // NOTE: 6 bytes for {@,\n,\n,+,\n,\n}
+          csize += 2*(r->rlen)+strlen(header)+6;   // NOTE: 6 bytes for {\n,\n,+,\n,\n}
         }
     }
   if (!arg->is_dam)
@@ -310,7 +313,60 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
 }
 
 static void prepare_fx(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
-{
+{ // NOTE: Assuming there is only a single input FASTX file   // TODO: remove the limitation
+  char     *name   = arg->snames[0];
+  char     *path   = PathTo(name);
+  char     *root   = Root(name,NULL);
+  
+  // 14 for "/." & ".class.xxxx."; 10 for thread ID & '\0'
+  const int MAX_FN = MAX(strlen(path),strlen(arg->tmp_path))+strlen(root)+14+10;
+  
+  // Set output file names (for both scattering and merging)
+  for (int c = 0; c < N_OTYPE; c++)
+    { Out_Info o = O_INFO[c];
+      
+      paramm[c].onames = Malloc(sizeof(char *)*arg->nthreads,"Allocating fnames");
+      for (int t = 0; t < arg->nthreads; t++)
+        { paramm[c].onames[t] = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
+          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",arg->tmp_path,o.sep,root,o.suf,t+1);
+        }
+
+      paramm[c].ofinal = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
+      sprintf(paramm[c].ofinal,"%s%s%s%s",path,o.sep,root,o.suf);
+
+      paramm[c].nfiles = arg->nthreads;
+      paramm[c].is_bin = o.is_bin;
+    }
+
+  // Set variables used during multi-thread classification
+  for (int t = 0; t < arg->nthreads; t++)
+    { paramc[t].fxfp  = gzopen(name, "r");
+      if (paramc[t].fxfp == NULL)
+        { fprintf(stderr,"%s: Cannot open %s\n",Prog_Name,name);
+          exit (1);
+        }
+      paramc[t].fxseq = kseq_init(paramc[t].fxfp);
+      
+      paramc[t].beg = t*arg->nparts;
+      paramc[t].end = MIN((t+1)*arg->nparts,arg->nreads);
+    }
+
+#ifndef NO_WRITE
+  // Set output file pointer to *.class file per thread
+#ifndef PARALLEL_WRITE
+  for (int t = 0; t < arg->nthreads; t++)
+    { paramc[t].cfile = Fopen(paramm[CLASS].onames[t],"w");
+      if (paramc[t].cfile == NULL)
+        { fprintf(stderr,"Cannot open %s\n",paramm[CLASS].onames[t]);
+          exit (1);
+        }
+    }
+#else
+  fprintf(stderr,"Parallel write for FASTX is currently unsupported.\n");
+  exit(1);
+#endif
+#endif // NO_WRITE
+
   return;
 }
 
@@ -332,6 +388,10 @@ void free_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
             Free_DB_Stub(paramc[t].stub);
           else
             fclose(paramc[t].hdrs);
+        }
+      else
+        { kseq_destroy(paramc[t].fxseq);
+          gzclose(paramc[t].fxfp);
         }
     }
   free(paramc);

@@ -21,6 +21,7 @@ int  READ_LEN;
 bool IS_DB;
 bool IS_DAM;
 
+// TODO: define different function for each of DAZZ_DB and FASTX?
 static void *kmer_class_thread(void *arg)
 { Class_Arg     *data   = (Class_Arg *)arg;
   Profile_Index *P      = data->P;
@@ -28,7 +29,6 @@ static void *kmer_class_thread(void *arg)
   const int      K      = P->kmer;
   const int      Km1    = K-1;
 
-  char         header[MAX_NAME];
   char        *seq;                   // Fetched sequence of the read
   uint16      *profile, *nprofile;    // Fetched profile of a read
   int          rlen, plen;            // `rlen` = `plen` + `Km1`
@@ -50,17 +50,19 @@ static void *kmer_class_thread(void *arg)
   int          N, M;                  // Number of walls/reliable intervals
   char        *buf;
 
-  // .db
+  // fastx
+  kseq_t      *fxseq;
+
+  // db
   DAZZ_DB     *db;
   DAZZ_READ   *r;
   char        *track, *crack;         // Data for dfile (crack = track + km1)
   int64        idx;                   // Data for afile
-
+  char         header[MAX_NAME];
   DAZZ_STUB   *stub;
   char       **flist;
   int         *findx;
   int          map;
-
   FILE        *hdrs;
   char        *hdrs_name = "";   // dummy variable for `FGETS`
 
@@ -84,6 +86,16 @@ static void *kmer_class_thread(void *arg)
       else
         { hdrs = data->hdrs;
         }
+    }
+  else
+    { fxseq = data->fxseq;
+      for (int i = 0; i < data->beg; i++)
+        if (kseq_read(fxseq) < 0)
+          { fprintf(stderr,"Cannot load %d-th read\n",i+1);
+            exit(1);
+          }
+      rlen_max = 50000;   // FIXME: auto computation
+      crack = Malloc(rlen_max*sizeof(char),"crack");
     }
 
   // Prepare buffers etc.
@@ -112,6 +124,11 @@ static void *kmer_class_thread(void *arg)
     ctx[GAIN] = rctx;
   }
 
+#ifdef DEBUG_SINGLE
+  if (DEBUG_SINGLE_ID < data->beg+1 || data->end < DEBUG_SINGLE_ID)
+    goto class_exit;
+#endif
+
 #if !defined(DEBUG_SINGLE) && defined(DEBUG_SMALL)
   for (int id = data->beg; id < data->beg+NREAD_SMALL; id++)
 #else
@@ -119,22 +136,30 @@ static void *kmer_class_thread(void *arg)
 #endif
     { 
 #ifdef DEBUG_SINGLE
-      if (id+1 != DEBUG_SINGLE_ID)
-        continue;
+      if (id+1 < DEBUG_SINGLE_ID)
+        { if (!IS_DB)
+            kseq_read(fxseq);
+          continue;
+        }
+      else if (DEBUG_SINGLE_ID < id+1)
+        goto class_exit;
 #endif
 
       if (IS_DB)
         { r = db->reads+id;
           rlen = r->rlen;
+          Load_Read(db,id,seq,2);
+        }
+      else
+        { kseq_read(fxseq);
+          rlen = fxseq->seq.l;
+          seq = (char *)fxseq->seq.s;
         }
 
 #if defined(DEBUG) || defined(DEBUG_CTX) || defined(DEBUG_ERROR) || defined(DEBUG_ITER)
       fprintf(stderr,"\nRead %d (%d bp): ",id+1,rlen);
       fflush(stderr);
 #endif
-
-      if (IS_DB)
-        Load_Read(db,id,seq,2);
 
 #ifdef DEBUG
       const int slen = strlen(seq);
@@ -161,18 +186,22 @@ static void *kmer_class_thread(void *arg)
                     map -= 1;
                   while (id >= findx[map])
                     map += 1;
-                  sprintf(header,"%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
+                  sprintf(header,"@%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
                 }
               else
                 { FSEEKO(hdrs,r->coff,SEEK_SET)
                   FGETS(header,MAX_NAME,hdrs)
                   header[strlen(header)-1] = '\0';
+                  header[0] = '@';
                 }
+            }
+          else
+            { sprintf(header,"@%s %s",fxseq->name.s,fxseq->comment.s);
             }
 
           buf[rlen] = '\0';
 
-          fprintf(data->cfile,"@%s\n%s\n+\n%s\n",header,seq,buf);
+          fprintf(data->cfile,"%s\n%s\n+\n%s\n",header,seq,buf);
 
           buf[rlen] = 'N';
 
@@ -217,13 +246,6 @@ static void *kmer_class_thread(void *arg)
 
       remove_slip(profile,plen,ctx,crack);
 
-/*#ifdef DEBUG_ITER
-      fprintf(stderr,"  Final: ");
-      for (int i = 0; i < plen; i++)
-        fprintf(stderr,"%c",stoc[(unsigned char)crack[i]]);
-      fflush(stderr);
-#endif*/
-
 #ifndef NO_WRITE
       if (IS_DB)
         { if (!IS_DAM)
@@ -231,13 +253,17 @@ static void *kmer_class_thread(void *arg)
                 map -= 1;
               while (id >= findx[map])
                 map += 1;
-              sprintf(header,"%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
+              sprintf(header,"@%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
             }
           else
             { FSEEKO(hdrs,r->coff,SEEK_SET)
               FGETS(header,MAX_NAME,hdrs)
               header[strlen(header)-1] = '\0';
+              header[0] = '@';
             }
+        }
+      else
+        { sprintf(header,"@%s %s",fxseq->name.s,fxseq->comment.s);
         }
 
       int bufidx = Km1;
@@ -245,7 +271,7 @@ static void *kmer_class_thread(void *arg)
         buf[bufidx++] = stoc[(unsigned char)crack[i]];
       buf[bufidx] = '\0';
 
-      fprintf(data->cfile,"@%s\n%s\n+\n%s\n",header,seq,buf);
+      fprintf(data->cfile,"%s\n%s\n+\n%s\n",header,seq,buf);
 
       if (IS_DB)
         { // Output binary to DAZZ track
@@ -263,10 +289,16 @@ static void *kmer_class_thread(void *arg)
       fflush(stderr);
 #endif
 
+#ifdef DEBUG_SINGLE
+class_exit:
+#endif
+
 #ifndef NO_WRITE
   fclose(data->cfile);
-  fclose(data->afile);
-  fclose(data->dfile);
+  if (IS_DB)
+    { fclose(data->afile);
+      fclose(data->dfile);
+    }
 #endif
 
   free(profile);
@@ -366,6 +398,12 @@ static Arg *parse_arg(int argc, char *argv[])
 
     if (arg->is_db && arg->nfiles != 1)
       { fprintf(stderr,"Only single file is accepted for .db and .dam\n");
+        exit(1);
+      }
+
+    // TODO: extend to multiple FASTX files
+    if (arg->nfiles != 1)
+      { fprintf(stderr,"Currently only single file is accepted for FASTX input\n");
         exit(1);
       }
 
