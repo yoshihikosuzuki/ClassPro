@@ -1,10 +1,10 @@
 ClassPro
+ClassGS
 prof2class
-Classifier.old.c
+
+*.old.c
 hoge.c
 a.out
-kseq.c
-kseq.o
 
 # Prerequisites
 *.d

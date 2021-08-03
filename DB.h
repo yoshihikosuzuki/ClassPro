@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 
+#include "libfastk.h"
 #include "QV.h"
 
 #define HIDE_FILES          //  Auxiliary DB files start with a . so they are "hidden"
@@ -231,12 +232,13 @@ int Count_Args(char *arg);
 
 //  The following general utilities return NULL if any of their input pointers are NULL, or if they
 //    could not perform their function (in which case they also print an error to stderr).
-
+/*
 void *Malloc(int64 size, char *mesg);                    //  Guarded versions of malloc, realloc
 void *Realloc(void *object, int64 size, char *mesg);     //  and strdup, that output "mesg" to
 char *Strdup(char *string, char *mesg);                  //  stderr if out of memory
-
+*/
 FILE *Fopen(char *path, char *mode);     // Open file path for "mode"
+/*
 char *PathTo(char *path);                // Return path portion of file name "path"
 char *Root(char *path, char *suffix);    // Return the root name, excluding suffix, of "path"
 
@@ -245,10 +247,10 @@ char *Root(char *path, char *suffix);    // Return the root name, excluding suff
 
 char *Catenate(char *path, char *sep, char *root, char *suffix);
 char *Numbered_Suffix(char *left, int num, char *right);
-
+*/
 
 // DB-related utilities
-
+/*
 void Print_Number(int64 num, int width, FILE *out);   //  Print big integer with commas
 int  Number_Digits(int64 num);                        //  Return # of digits in printed number
 
@@ -265,7 +267,7 @@ void Change_Read(char *s);    //  Convert read from one case to the other
 
 void Letter_Arrow(char *s);   //  Convert arrow pw's from numbers to uppercase letters (0-3 to 1234)
 void Number_Arrow(char *s);   //  Convert arrow pw string from letters to numbers
-
+*/
 
 /*******************************************************************************************
  *

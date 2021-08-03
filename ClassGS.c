@@ -11,9 +11,7 @@
 #include "libfastk.h"
 #include "DB.h"
 
-#define MAX_NAME 10000
-
-static char *Usage = "<source_root> <E/H_thres> <H/D_thres> <D/R_thres> > out.class";
+static char *Usage = "<source_root> <E/H_thres> <H/D_thres> <D/R_thres>";
 
 int main(int argc, char *argv[])
 { Profile_Index *P;
@@ -27,6 +25,8 @@ int main(int argc, char *argv[])
   FILE       *hdrs = NULL;
   char       *hdrs_name = NULL;
   bool        is_dam;
+
+  FILE       *cfile;
 
   int  THRES[4];
 
@@ -96,6 +96,8 @@ int main(int argc, char *argv[])
           }
         free(hdrs_name);
       }
+    
+    cfile = Fopen(Catenate(pwd,"/",root,".GS.class"),"w");
 
     free(root);
     free(pwd);
@@ -170,7 +172,7 @@ int main(int argc, char *argv[])
         
         if (rlen <= Km1)
           { asgn[rlen] = '\0';
-            printf("%s\n%s\n+\n%s\n",header,seq,asgn);
+            fprintf(cfile,"%s\n%s\n+\n%s\n",header,seq,asgn);
             asgn[rlen] = 'N';
             continue;
           }
@@ -188,10 +190,12 @@ int main(int argc, char *argv[])
           }
         asgn[idx] = '\0';
 
-        printf("%s\n%s\n+\n%s\n",header,seq,asgn);
+        fprintf(cfile,"%s\n%s\n+\n%s\n",header,seq,asgn);
       }
     free(profile);
   }
+
+  fclose(cfile);
 
   Free_Profiles(P);
   Close_DB(db);

@@ -10,11 +10,16 @@
 #include <pthread.h>
 #include <sys/stat.h>
 
-#include "libfastk.h"
-#include "DB.h"
 #include "ClassPro.h"
 
-#define THREAD pthread_t
+#include "const.c"
+#include "io.c"
+#include "emodel.c"
+#include "hist.c"
+#include "context.c"
+#include "wall.c"
+#include "class.c"
+#include "prob.c"
 
 bool VERBOSE;
 int  READ_LEN;
@@ -229,11 +234,15 @@ static void *kmer_class_thread(void *arg)
       fprintf(stderr,"%d (/%d; %d %%) rel intvls, ",M,N,(int)(100.*rtot/plen));
 #endif
 
-      int nnorm = pmm_vi(profile,nprofile,plen,eta,lambda);
+      /*int nnorm = pmm_vi(profile,nprofile,plen,eta,lambda);
 
 #ifdef DEBUG_ITER
       fprintf(stderr,"(H,D)=(%.lf,%.lf) (%d %% normal)\n",lambda[0],lambda[1],(int)(100.*nnorm/plen));
-#endif
+#endif*/
+
+      // FIXME: experimental hard coding of global cov
+      lambda[0] = 20.;
+      lambda[1] = 40.;
 
       classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,(int)lambda[0],(int)lambda[1]);
       classify_unreliable(profile,plen,intvl,N,perror,(int)lambda[0],(int)lambda[1]);
@@ -497,7 +506,8 @@ int main(int argc, char *argv[])
     if (arg->verbose)
       fprintf(stderr,"Total # of reads = %d, # of reads per thread = %d\n",arg->nreads,arg->nparts);
 
-    precompute_probs();
+    precompute_logfact();
+    precompute_digamma();
     process_global_hist(arg->fk_root,arg->cov);
     emodel = calc_init_thres();
   }

@@ -9,11 +9,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/stat.h>
-#include <zlib.h>
 
-#include "kseq.h"
-#include "libfastk.h"
-#include "DB.h"
 #include "ClassPro.h"
 
 void *merge_anno(void *arg)

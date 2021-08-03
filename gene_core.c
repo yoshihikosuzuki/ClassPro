@@ -40,7 +40,7 @@ void *Realloc(void *p, int64 size, char *mesg)
   return (p);
 }
 
-char *Strdup(char *name, char *mesg)
+char *Strdup(const char *name, const char *mesg)
 { char *s;
 
   if (name == NULL)
@@ -54,7 +54,7 @@ char *Strdup(char *name, char *mesg)
   return (s);
 }
 
-char *Strndup(char *name, int len, char *mesg)
+char *Strndup(const char *name, const int len, const char *mesg)
 { char *s;
 
   if (name == NULL)
@@ -68,7 +68,7 @@ char *Strndup(char *name, int len, char *mesg)
   return (s);
 }
 
-char *PathTo(char *name)
+char *PathTo(const char *name)
 { char *path, *find;
 
   if (name == NULL)
@@ -80,7 +80,7 @@ char *PathTo(char *name)
   return (path);
 }
 
-char *Root(char *name, char *suffix)
+char *Root(char *name, const char *suffix)
 { char *path, *find, *dot;
   int   epos;
 
@@ -106,7 +106,7 @@ char *Root(char *name, char *suffix)
   return (path);
 }
 
-char *Catenate(char *path, char *sep, char *root, char *suffix)
+char *Catenate(const char *path, const char *sep, const char *root, const char *suffix)
 { static char *cat = NULL;
   static int   max = -1;
   int len;

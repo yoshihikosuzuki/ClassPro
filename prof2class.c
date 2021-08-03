@@ -10,14 +10,12 @@
 #include <pthread.h>
 #include <sys/stat.h>
 
-#include <zlib.h>
-#include "kseq.h"
-KSEQ_INIT(gzFile, gzread)
-
 #include "libfastk.h"
 #include "DB.h"
 
-#define MAX_NAME 10000
+#include <zlib.h>
+#include "kseq.h"
+KSEQ_INIT(gzFile, gzread)
 
 static char *Usage = "<relative_profile>[.prof] <source>[.db|.dam|.f[ast][aq][.gz] ";
 
