@@ -251,8 +251,8 @@ static void *kmer_class_thread(void *arg)
       fflush(stderr);
 #endif
 
-      classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,lambda_prior[0], lambda_prior[1]);
-      classify_unreliable(profile,plen,intvl,N,perror,lambda_prior[0], lambda_prior[1]);
+      classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,lambda_prior[0],lambda_prior[1]);
+      classify_unreliable(profile,plen,intvl,N,perror,lambda_prior[0],lambda_prior[1]);
 
       for (int i = 0; i < N; i++)
         for (int j = intvl[i].i; j < intvl[i].j; j++)

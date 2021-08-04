@@ -517,10 +517,34 @@ void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *em
     if (eintvl[e][i].pe >= pethres[e])
       asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 0;
   // Include walls that can be explained by errors in self
-  e = SELF;
+  // for (int i = 0; i < eidx; i++)
+  //   if (eintvl[e][i].pe >= pethres[e])
+  //     asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 1;
+  
+  // Concatenate adjacent error intervals
+  bool is_error[plen];
+  for (int i = 0; i < plen; i++)
+    is_error[i] = false;
   for (int i = 0; i < eidx; i++)
-    if (eintvl[e][i].pe >= pethres[e])
-      asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 1;
+    if (eintvl[SELF][i].pe >= pethres[SELF])
+      for (int j = eintvl[SELF][i].i; j < eintvl[SELF][i].j; j++)
+        is_error[j] = true;
+  for (int i = 1; i < plen; i++)
+    if (is_error[i-1] != is_error[i])
+      asgn[i] = 1;
+    else if (is_error[i-1] && is_error[i])
+      asgn[i] = 0;
+
+  // Store logp error in self considering the pair, for each interval
+  double pe_i[plen+1], pe_j[plen+1];
+  for (int i = 0; i < plen+1; i++)
+    { pe_i[i] = pe_j[i] = -INFINITY;
+    }
+  for (int i = 0; i < eidx; i++)
+    { // fprintf(stderr,"*** %d (%d,%d)=%lf\n",i,eintvl[SELF][i].i,eintvl[SELF][i].j,eintvl[SELF][i].pe);
+      pe_i[eintvl[SELF][i].i] = MAX(pe_i[eintvl[SELF][i].i], log(eintvl[SELF][i].pe));
+      pe_j[eintvl[SELF][i].j] = MAX(pe_i[eintvl[SELF][i].j], log(eintvl[SELF][i].pe));
+    }
 
   // Wall positions
   N = 0;   // # of intervals (N+1 is the length of `wall`)
@@ -566,7 +590,7 @@ void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *em
           double logp_sk = logp_skellam(ci-cj,_lambda);
 
 #ifdef DEBUG_INTVL
-          fprintf(stderr,"(%d,%d) [%d, %d] %lf",beg,end,ci,cj,exp(logp_sk));
+          fprintf(stderr,"(%d,%d) [%d, %d] Psk=%lf",beg,end,ci,cj,exp(logp_sk));
 #endif
 
           // Transition between wall counts can be explained by sampling fluctuation
@@ -652,6 +676,9 @@ void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *em
 
       intvl[iidx].i = beg;
       intvl[iidx].j = end;
+      intvl[iidx].logpe_i = pe_i[beg];
+      intvl[iidx].logpe_j = pe_j[end];
+      // fprintf(stderr,"PeS=(%lf,%lf)\n",pe_i[beg],pe_j[end]);
       intvl[iidx].is_rel = is_rel;
       intvl[iidx].is_err = is_err;
       intvl[iidx].asgn = (is_err) ? ERROR : N_STATE;

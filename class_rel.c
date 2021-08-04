@@ -361,7 +361,7 @@ static inline double logp_d_bw(int idx, Rel_Intvl *rintvl, P_Error *cerror, int 
  *
  ********************************************************************************************/
 
-static void forward_update(int i, double **dp, int ****st, char ***bt, bool *rep, int POS_INIT, Rel_Intvl *rintvl, int M, int plen, P_Error *perror, P_Error *cerror, int cov[])
+static void forward_update(int i, double **dp, int ****st, char ***bt, bool *rep, int POS_INIT, Rel_Intvl *rintvl, int plen, P_Error *perror, P_Error *cerror, int cov[])
 { Rel_Intvl ri = rintvl[i];
 
   double logp_trans[N_STATE][N_STATE];   // s @ i-1 -> t @ i
@@ -700,7 +700,7 @@ static void forward_dp(double **dp, int ****st, char ***bt, bool *rep, char *asg
 
   // The others
   for (i = 1; i < M; i++)
-    { forward_update(i,dp,st,bt,rep,POS_INIT,rintvl,M,plen,perror,cerror,cov);
+    { forward_update(i,dp,st,bt,rep,POS_INIT,rintvl,plen,perror,cerror,cov);
 
 #ifdef DEBUG_DP
       forward_print(i,dp,st,bt,rintvl);

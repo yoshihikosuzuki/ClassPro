@@ -11,8 +11,8 @@
 #undef PARALLEL_WRITE
 // #define NREAD_PWRITE 100
 
-#undef DEBUG_SINGLE
-#define DEBUG_SINGLE_ID 71
+#define DEBUG_SINGLE
+#define DEBUG_SINGLE_ID 90
 #undef DEBUG_SMALL
 #define NREAD_SMALL 100
 
@@ -21,13 +21,13 @@
 #undef DEBUG_BINOM
 #undef DEBUG_CTX
 #undef DEBUG_ERROR
-#undef DEBUG_INTVL
+#define DEBUG_INTVL
 #undef DEBUG_COR
 #undef DEBUG_PMM
-#undef DEBUG_PROB
+#define DEBUG_PROB
 #undef DEBUG_DP
-#define DEBUG_REL
-#undef DEBUG_UNREL
+#undef DEBUG_REL
+#define DEBUG_UNREL
 #define DEBUG_SLIP
 #undef DEBUG_MERGE
 
@@ -148,6 +148,8 @@ typedef struct
 typedef struct
   { int    i;
     int    j;
+    double logpe_i;   // error in self by check_drop at i
+    double logpe_j;   // error in self by check_gain at j
     bool   is_rel;   // hard assignment of reliable intervals
     bool   is_err;   // hard assignment of erroneous intervals
     char   asgn;

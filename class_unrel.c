@@ -8,23 +8,14 @@
 
 #include "ClassPro.h"
 
-static const int N_SIGMA_R_U           = 3;
-static const int N_BASE_EST           = 1000;
-static const int N_BASE_EST_MIN           = 1;
-static const int N_INTVL_EST           = 1;
-static const int N_INTVL_EST_MIN           = 1;
-static const double MIN_P_NORMAL           = 0.;
+static const int N_SIGMA_R_U     = 3;
+static double    DR_RATIO_U;
+static const int N_BASE_EST      = 1000;
+static const int N_BASE_EST_MIN  = 1;
+static const int N_INTVL_EST     = 5;
+static const int N_INTVL_EST_MIN = 1;
 
-typedef struct
-  { int idx;
-    int cnt;
-  } Intvl_IC;
-
-static int compare_iic(const void *a, const void *b)
-{ return ((Intvl_IC*)a)->cnt - ((Intvl_IC*)b)->cnt;
-}
-
-static void nn_intvl_u(int idx, Intvl *intvl, int N, char s, int ret[2])
+static inline void nn_intvl_u(int idx, Intvl *intvl, int N, char s, int ret[2])
 { int p = idx-1;
   while (p >= 0 && intvl[p].asgn != s)
     p--;
@@ -38,7 +29,7 @@ static void nn_intvl_u(int idx, Intvl *intvl, int N, char s, int ret[2])
   return;
 }
 
-static void est_cnt_base(int idx, Intvl *intvl, int N, char s, uint16* profile, int ret[2])
+static inline void est_cnt_base(int idx, Intvl *intvl, int N, char s, uint16* profile, int ret[2])
 { int l, csum;
 
   l = N_BASE_EST;   // TODO: change to l=0 -> N_BASE_EST
@@ -72,7 +63,7 @@ static void est_cnt_base(int idx, Intvl *intvl, int N, char s, uint16* profile, 
   return;
 }
 
-static void est_cnt_intvl_u(int idx, Intvl *intvl, int N, uint16 *profile, char s, int ret[2])
+static inline void est_cnt_intvl_u(int idx, Intvl *intvl, int N, uint16 *profile, char s, int ret[2])
 { int csum, lsum;
   int nadd, i;
 
@@ -111,53 +102,33 @@ static void est_cnt_intvl_u(int idx, Intvl *intvl, int N, uint16 *profile, char 
   return;
 }
 
-static double calc_logp_e_u(int idx, Intvl *intvl, uint16 *profile, int plen, P_Error *perror, int cov[])
+static inline double calc_logp_e_u(int idx, Intvl *intvl, uint16 *profile, int plen, P_Error *perror, int cov[])
 { Intvl I = intvl[idx];
-  double logp_l, logp_r;
   double logp_po, logp_er;
-  
-#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"  [ERROR]\n");
-#endif
 
-  logp_po = logp_poisson(profile[I.i],cov[ERROR]);
-  logp_er = -INFINITY;
-  if (I.i > 0)
-    logp_er = log(perror[I.i][SELF][DROP]);
-  logp_l = MAX(logp_po,logp_er);
+  logp_po = (logp_poisson(profile[I.i],cov[ERROR])
+             + logp_poisson(profile[I.j-1],cov[ERROR]));
+  // logp_er = MAX(((I.i > 0) ? log(perror[I.i][SELF][DROP]) : -INFINITY),
+  //               ((I.j < plen) ? log(perror[I.j][SELF][GAIN]) : -INFINITY));   // TODO: use check_drop/gain?
+  logp_er = MAX(I.logpe_i,I.logpe_j);
 
 #if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [L] logp(PO)=%lf, logp(ER)=%lf\n",logp_po,logp_er);
+  fprintf(stderr,"  [E] logp(PO)=%lf, logp(ER)=%lf\n",logp_po,logp_er);
 #endif
 
-  logp_po = logp_poisson(profile[I.j-1],cov[ERROR]);
-  logp_er = -INFINITY;
-  if (I.j < plen)
-    logp_er = log(perror[I.j][SELF][GAIN]);
-  logp_r = MAX(logp_po,logp_er);
-
-#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [R] logp(PO)=%lf, logp(ER)=%lf\n",logp_po,logp_er);
-#endif
-
-  return logp_l+logp_r;
+  return MAX(logp_po,logp_er);
 }
 
-static double calc_logp_r_u(int idx, Intvl *intvl, int N, uint16 *profile, int cov[])
+static inline double calc_logp_r_u(int idx, Intvl *intvl, int N, uint16 *profile, int cov[])
 { Intvl I = intvl[idx];
-  double logp_l, logp_r;
-  double logp_sf, logp_er;
-
-#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"  [REPEAT]\n");
-#endif
+  double logp_er;
 
   if (MAX(profile[I.i],profile[I.j-1]) >= cov[REPEAT])
     { 
 #if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-      fprintf(stderr,"    Larger than R-cov\n");
+      fprintf(stderr," [R] Larger than R-cov\n");
 #endif
-      return 0.;
+      return -10.;
     }
 
   int est_cnt[2];
@@ -179,40 +150,23 @@ static double calc_logp_r_u(int idx, Intvl *intvl, int N, uint16 *profile, int c
     pc = nc;
   else if (nc == -1)
     nc = pc;
+  pc = (int)(DR_RATIO_U*pc);
+  nc = (int)(DR_RATIO_U*nc);
 
-  double dr_ratio = 1.+N_SIGMA_R_U*(1./sqrt(cov[DIPLO]));
-  pc = (int)((double)pc*dr_ratio);
-  nc = (int)((double)nc*dr_ratio);
+  if (pc <= profile[I.i] || profile[I.j-1] >= nc)
+    return -10.;
 
-  // if (pc <= profile[I.i] || profile[I.j-1] >= nc)
-  //   return 0.;
-
-  /*double _lambda;
-  _lambda = (double)pc*(ri.i-pe+1)/READ_LEN;
-  logp_sf = logp_skellam(ri.ci-pc,_lambda);*/
-  logp_sf = -INFINITY;
-  logp_er = (pc > profile[I.i]) ? logp_binom(profile[I.i],pc,1-0.01) : -INFINITY;   // TODO: binom test? use ctx
-  logp_l = MAX(logp_sf,logp_er);
+  logp_er = (logp_binom(profile[I.i],pc,1-PE_MEAN)   // TODO: binom test? use ctx
+             + logp_binom(profile[I.j-1],nc,1-PE_MEAN));
 
 #if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [L] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+  fprintf(stderr,"  [R] logp(ER)=%lf\n",logp_er);
 #endif
 
-  /*_lambda = (double)nc*(nb-ri.i+1)/READ_LEN;
-  logp_sf = logp_skellam(nc-ri.cj,_lambda);*/
-  logp_sf = -INFINITY;
-  logp_er = (profile[I.j-1] < nc) ? logp_binom(profile[I.j-1],nc,1-0.01) : -INFINITY; 
-  logp_r = MAX(logp_sf,logp_er);
-
-#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [R] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
-#endif
-
-  //return MAX(logp_l,logp_r);
-  return logp_l+logp_r;
+  return logp_er;
 }
 
-static double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
+static inline double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
 { Intvl I = intvl[idx];
   double logp_l = -INFINITY, logp_r = -INFINITY;
   double logp_sf, logp_er;
@@ -226,26 +180,27 @@ static double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 *profil
     { double _lambda = (double)cov[s]*(I.i-intvl[p].j+1)/READ_LEN;
       logp_sf = logp_skellam(profile[I.i]-profile[intvl[p].j-1],_lambda);
       if (intvl[p].j == I.i)
-        logp_er = log(MAX(perror[I.i][OTHERS][DROP],perror[I.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
+        logp_er = log(MIN(perror[I.i][OTHERS][DROP],perror[I.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
       else
         logp_er = -INFINITY;
       logp_l = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [L] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+  fprintf(stderr,"  [%c L] logp(SF)=%lf, logp(ER)=%lf\n",stoc[s],logp_sf,logp_er);
 #endif
     }
+
   if (n < N)
     { double _lambda = (double)cov[s]*(intvl[n].i-I.j+1)/READ_LEN;
       logp_sf = logp_skellam(profile[intvl[n].i]-profile[I.j-1],_lambda);
       if (I.j == intvl[n].i)
-        logp_er = log(MAX(perror[I.j][OTHERS][DROP],perror[I.j][OTHERS][GAIN]));
+        logp_er = log(MIN(perror[I.j][OTHERS][DROP],perror[I.j][OTHERS][GAIN]));
       else
         logp_er = -INFINITY;
       logp_r = MAX(logp_sf,logp_er);
 
 #if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"    [R] logp(SF)=%lf, logp(ER)=%lf\n",logp_sf,logp_er);
+  fprintf(stderr,"  [%c R] logp(SF)=%lf, logp(ER)=%lf\n",stoc[s],logp_sf,logp_er);
 #endif
     }
 
@@ -258,69 +213,30 @@ static double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 *profil
         logp_l = logp_r;
       else if (n >= N)
         logp_r = logp_l;
-      return logp_l+logp_r;
     }
 
-  //return MIN(logp_l,logp_r);
-  return MAX(logp_l,logp_r);
+  // return MIN(logp_l,logp_r);
+  // return MAX(logp_l,logp_r);
+  return logp_l+logp_r;
 }
 
-static double calc_logp_h_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
-{ Intvl I = intvl[idx];
-
-#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"  [HAPLO]\n");
-#endif
-
-  int est_cnt[2];
-  est_cnt_intvl_u(idx,intvl,N,profile,DIPLO,est_cnt);
-  int pc = (int)((double)est_cnt[0]/1.25);   // TODO: change to N-sigma
-  int nc = (int)((double)est_cnt[1]/1.25);
-
-  if (pc > 0 && pc <= profile[I.i])
-    return -INFINITY;
-  if (nc > 0 && nc <= profile[I.j-1])
-    return -INFINITY;
-
-  // TODO: NN H-interval + N-sigma check?
-
-  return calc_logp_hd_u(HAPLO,idx,intvl,N,profile,perror,cov);
+static inline double calc_logp_h_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
+{ return calc_logp_hd_u(HAPLO,idx,intvl,N,profile,perror,cov);
 }
 
-static double calc_logp_d_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
-{ Intvl I = intvl[idx];
-
-#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-  fprintf(stderr,"  [DIPLO]\n");
-#endif
- 
-  int est_cnt[2];
-  est_cnt_intvl_u(idx,intvl,N,profile,HAPLO,est_cnt);
-  int pc = (int)((double)est_cnt[0]*1.25);   // TODO: change to N-sigma
-  int nc = (int)((double)est_cnt[1]*1.25);
-
-  if (pc < 0 && nc < 0)
-    pc = nc = (int)((double)cov[HAPLO]*1.25);
-  else if (pc < 0)
-   pc = nc;
-  else if (nc < 0)
-   nc = pc;
-  
-  if (profile[I.i] < pc && profile[I.j-1] < nc)
-    return -INFINITY;
-
-  return calc_logp_hd_u(DIPLO,idx,intvl,N,profile,perror,cov);
+static inline double calc_logp_d_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
+{ return calc_logp_hd_u(DIPLO,idx,intvl,N,profile,perror,cov);
 }
 
-static void update_state_u(int idx, Intvl *intvl, int N, uint16 *profile, int plen, P_Error *perror, int cov[])
-{ char   s, smax = N_STATE;
-  double logp, logpmax = -INFINITY;
+static void update_state_u(int idx, int d, Intvl *intvl, int N, uint16 *profile, int plen, P_Error *perror, int cov[])
+{ double logp, logpmax = -INFINITY;
+  int smax = -1;
 
-#if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-      fprintf(stderr,"idx=%d (%d,%d)\n",idx,intvl[idx].i,intvl[idx].j);
+#ifdef DEBUG_UNREL
+      fprintf(stderr,"\n<%d> Intvl[%d] @ (%d,%d) %d -> %d: class=%c\n",d,idx,intvl[idx].i,intvl[idx].j,profile[intvl[idx].i],profile[intvl[idx].j-1],(intvl[idx].asgn == N_STATE) ? '-' : stoc[(int)intvl[idx].asgn]);
 #endif
 
-  for (s = ERROR; s <= DIPLO; s++)
+  for (int s = ERROR; s <= DIPLO; s++)
     { if (s == ERROR)
         logp = calc_logp_e_u(idx,intvl,profile,plen,perror,cov);
       else if (s == REPEAT)
@@ -331,17 +247,17 @@ static void update_state_u(int idx, Intvl *intvl, int N, uint16 *profile, int pl
         logp = calc_logp_d_u(idx,intvl,N,profile,perror,cov);
 
       if (logp > logpmax)
-        { smax = s;
-          logpmax = logp;
+        { logpmax = logp;
+          smax = s;
         }
 
 #if defined(DEBUG_UNREL) && defined(DEBUG_PROB)
-      fprintf(stderr,"idx=%d (%d,%d), s=%d, logp=%lf\n",idx,intvl[idx].i,intvl[idx].j,s,logp);
+      fprintf(stderr,"logp(%c)=%lf\n",stoc[s],logp);
 #endif
     }
 
 #ifdef DEBUG
-  if (smax >= N_STATE)
+  if (smax == -1)
     { fprintf(stderr,"No valid probability for interval %d\n",idx);
       exit(1);
     }
@@ -350,7 +266,7 @@ static void update_state_u(int idx, Intvl *intvl, int N, uint16 *profile, int pl
   if (intvl[idx].asgn != smax)
     {
 #ifdef DEBUG_UNREL
-      fprintf(stderr,"state updated @ %d: %d -> %d\n",idx,intvl[idx].asgn,smax);
+      fprintf(stderr,"state updated @ %d: %c -> %c\n",idx,(intvl[idx].asgn == N_STATE) ? '-' : stoc[(int)intvl[idx].asgn],stoc[smax]);
 #endif
 
       intvl[idx].asgn = smax;
@@ -359,56 +275,66 @@ static void update_state_u(int idx, Intvl *intvl, int N, uint16 *profile, int pl
   return;
 }
 
+typedef struct
+  { int idx;
+    int cnt;
+  } Intvl_IC;
+
+static int compare_iic(const void *a, const void *b)
+{ return ((Intvl_IC*)a)->cnt - ((Intvl_IC*)b)->cnt;
+}
+
+// void extend_e()
+// { 
+// }
+
 void classify_unreliable(uint16 *profile, int plen, Intvl *intvl, int N, P_Error *perror, int hcov, int dcov)
 { int cov[N_STATE] = {1, dcov+6*(int)sqrt(dcov), hcov, dcov};
+  DR_RATIO_U = 1.+N_SIGMA_R_U*(1./sqrt(cov[DIPLO]));
 
-  // Check density of reliable H/D bases
-  int rel_hd = 0;
+  bool is_fixed[N];
   for (int i = 0; i < N; i++)
-    { if (intvl[i].is_rel && (intvl[i].asgn == HAPLO || intvl[i].asgn == DIPLO))
-        rel_hd += intvl[i].j - intvl[i].i;
-    }
-  double pnorm = (double)rel_hd/plen;
-  if (pnorm < MIN_P_NORMAL)
-    { 
-#ifdef DEBUG_UNREL
-      fprintf(stderr,"Too few reliable H/D bases.\n");
-#endif
-      
-      for (int i = 0; i < N; i++)
-        if (!intvl[i].is_rel && !intvl[i].is_err)
-            intvl[i].asgn = REPEAT;
+    is_fixed[i] = (intvl[i].is_rel && (intvl[i].asgn == HAPLO || intvl[i].asgn == DIPLO));
 
-      return;
-    }
-  
-  // Assignment
   Intvl_IC iord[N];
   for (int i = 0; i < N; i++)
     { iord[i].idx = i;
       iord[i].cnt = MIN(profile[intvl[i].i],profile[intvl[i].j-1]);
     }
   qsort(iord,N,sizeof(Intvl_IC),compare_iic);
-  
+
   for (int i = N-1; i >= 0; i--)
-    if (!intvl[iord[i].idx].is_rel && !intvl[iord[i].idx].is_err)
-      update_state_u(iord[i].idx,intvl,N,profile,plen,perror,cov);
+    if (!is_fixed[iord[i].idx])
+      update_state_u(iord[i].idx,0,intvl,N,profile,plen,perror,cov);
 
   for (int i = 0; i < N; i++)
-    if (!intvl[iord[i].idx].is_rel && !intvl[iord[i].idx].is_err)
-      update_state_u(iord[i].idx,intvl,N,profile,plen,perror,cov);
+    if (!is_fixed[iord[i].idx])
+      update_state_u(iord[i].idx,1,intvl,N,profile,plen,perror,cov);
 
 #ifdef DEBUG_ITER
   fprintf(stderr,"         ");
   for (int i = 0; i < N; i++)
-    { if (!intvl[i].is_rel && !intvl[i].is_err)
+    { if (!is_fixed[i])
         fprintf(stderr,"+");
       else
         fprintf(stderr," ");
     }
   fprintf(stderr,"\n  Intvl: ");
   for (int i = 0; i < N; i++)
-    fprintf(stderr,"%c",stoc[(unsigned char)intvl[i].asgn]);
+    fprintf(stderr,"%c",stoc[(int)intvl[i].asgn]);
+  fprintf(stderr,"\n");
+  fflush(stderr);
+#endif
+
+  char asgn[plen];
+  for (int i = 0; i < N; i++)
+    for (int j = intvl[i].i; j < intvl[i].j; j++)
+      asgn[j] = intvl[i].asgn;
+
+#if defined(DEBUG_ITER) && defined(DEBUG_SINGLE)
+  fprintf(stderr,"  Final: ");
+  for (int i = 0; i < plen; i++)
+    fprintf(stderr,"%c",stoc[(int)asgn[i]]);
   fprintf(stderr,"\n");
   fflush(stderr);
 #endif
