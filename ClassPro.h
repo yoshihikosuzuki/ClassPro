@@ -11,7 +11,7 @@
 #undef PARALLEL_WRITE
 // #define NREAD_PWRITE 100
 
-#define DEBUG_SINGLE
+#undef DEBUG_SINGLE
 #define DEBUG_SINGLE_ID 71
 #undef DEBUG_SMALL
 #define NREAD_SMALL 100
@@ -24,8 +24,8 @@
 #undef DEBUG_INTVL
 #undef DEBUG_COR
 #undef DEBUG_PMM
-#define DEBUG_PROB
-#define DEBUG_DP
+#undef DEBUG_PROB
+#undef DEBUG_DP
 #define DEBUG_REL
 #undef DEBUG_UNREL
 #define DEBUG_SLIP

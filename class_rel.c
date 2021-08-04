@@ -1111,7 +1111,7 @@ void classify_reliable(Rel_Intvl *rintvl, int M, Intvl *intvl, int N, int plen, 
   char ***bt_f, ***bt_b;
   bool *rep_f, *rep_b;
   char *asgn_f, *asgn_b;
-/*
+
   dp_f = Malloc(sizeof(double*)*M,"");
   for (int i = 0; i < M; i++)
     dp_f[i] = Malloc(sizeof(double)*N_STATE,"");
@@ -1138,11 +1138,11 @@ void classify_reliable(Rel_Intvl *rintvl, int M, Intvl *intvl, int N, int plen, 
 #ifdef DEBUG_ITER
   fprintf(stderr,"  FWD : ");
   for (int i = 0; i < M; i++)
-    fprintf(stderr,"%c",stoc[(unsigned char)asgn_f[i]]);
+    fprintf(stderr,"%c",stoc[(int)asgn_f[i]]);
   fprintf(stderr,"\n");
   fflush(stderr);
 #endif
-*/
+
   dp_b = Malloc(sizeof(double*)*M,"");
   for (int i = 0; i < M; i++)
     dp_b[i] = Malloc(sizeof(double)*N_STATE,"");
@@ -1169,20 +1169,43 @@ void classify_reliable(Rel_Intvl *rintvl, int M, Intvl *intvl, int N, int plen, 
 #ifdef DEBUG_ITER
   fprintf(stderr,"  BWD : ");
   for (int i = 0; i < M; i++)
-    fprintf(stderr,"%c",stoc[(unsigned char)asgn_b[i]]);
+    fprintf(stderr,"%c",stoc[(int)asgn_b[i]]);
   fprintf(stderr,"\n");
   fflush(stderr);
 #endif
 
   // Find best path by combining forward and backward DPs
+  double max_logp, logp_f, logp_b, logp_joint;
+  int max_s;
+  for (int i = 0; i < M; i++)
+    { max_logp = -INFINITY;
+      max_s = -1;
+
+      for (int s = ERROR; s <= DIPLO; s++)
+        { if (rep_f[i])
+            logp_f = (s == REPEAT) ? 0. : -INFINITY;
+          else
+            logp_f = dp_f[i][s];
+          if (rep_b[i])
+            logp_b = (s == REPEAT) ? 0. : -INFINITY;
+          else
+            logp_b = dp_b[i][s];
+            
+          logp_joint = logp_f + logp_b;
+          if (max_logp < logp_joint)
+            { max_logp = logp_joint;
+              max_s = s;
+            }
+        }
+      if (max_s == -1)
+        max_s = REPEAT;
+      rintvl[i].asgn = max_s;
+    }
 
 #ifdef DEBUG_ITER
-  // fprintf(stderr,"         ");
-  // for (int i = 0; i < M; i++)
-  //   fprintf(stderr,"%c",(rintvl[i].asgn != init_asgn[i]) ? '*' : ' ');
-  fprintf(stderr,"\n  REL : ");
+  fprintf(stderr,"  REL : ");
   for (int i = 0; i < M; i++)
-    fprintf(stderr,"%c",stoc[(unsigned char)rintvl[i].asgn]);
+    fprintf(stderr,"%c",stoc[(int)rintvl[i].asgn]);
   fprintf(stderr,"\n");
   fflush(stderr);
 #endif
@@ -1197,6 +1220,48 @@ void classify_reliable(Rel_Intvl *rintvl, int M, Intvl *intvl, int N, int plen, 
         }
       intvl[iidx].asgn = rintvl[ridx].asgn;
     }
+
+  for (int i = 0; i < M; i++)
+    free(dp_f[i]);
+  free(dp_f);
+  for (int i = 0; i < M; i++)
+    { for (int j = 0; j < N_STATE; j++)
+        { for (int k = 0; k < N_STATE; k++)
+            free(st_f[i][j][k]);
+          free(st_f[i][j]);
+        }
+      free(st_f[i]);
+    }
+  free(st_f);
+  for (int i = 0; i < M; i++)
+    { for (int j = 0; j < N_STATE; j++)
+        free(bt_f[i][j]);
+      free(bt_f[i]);
+    }
+  free(bt_f);
+  free(rep_f);
+  free(asgn_f);
+
+  for (int i = 0; i < M; i++)
+    free(dp_b[i]);
+  free(dp_b);
+  for (int i = 0; i < M; i++)
+    { for (int j = 0; j < N_STATE; j++)
+        { for (int k = 0; k < N_STATE; k++)
+            free(st_b[i][j][k]);
+          free(st_b[i][j]);
+        }
+      free(st_b[i]);
+    }
+  free(st_b);
+  for (int i = 0; i < M; i++)
+    { for (int j = 0; j < N_STATE; j++)
+        free(bt_b[i][j]);
+      free(bt_b[i]);
+    }
+  free(bt_b);
+  free(rep_b);
+  free(asgn_b);
 
   return;
 }
