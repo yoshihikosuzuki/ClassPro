@@ -9,7 +9,7 @@
 
 #define DUP_PROFILE
 #undef PARALLEL_WRITE
-#define NREAD_PWRITE 100
+// #define NREAD_PWRITE 100
 
 #define DEBUG_SINGLE
 #define DEBUG_SINGLE_ID 71
@@ -24,9 +24,9 @@
 #undef DEBUG_INTVL
 #undef DEBUG_COR
 #undef DEBUG_PMM
-#undef DEBUG_PROB
-#undef DEBUG_DP
-#undef DEBUG_REL
+#define DEBUG_PROB
+#define DEBUG_DP
+#define DEBUG_REL
 #undef DEBUG_UNREL
 #define DEBUG_SLIP
 #undef DEBUG_MERGE
@@ -168,7 +168,7 @@ void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE],
 
 /*******************************************************************************************
  *
- *  Interval classification (class.c)
+ *  Interval classification (class_rel.c, class_unrel.c)
  *
  ********************************************************************************************/
 
@@ -182,7 +182,7 @@ void remove_slip(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], char *crack);
 
 /*******************************************************************************************
  *
- *  CLASSIFICATION SETUP (ClassPro.c)
+ *  Main routine for classification (ClassPro.c)
  *
  ********************************************************************************************/
 
@@ -254,7 +254,6 @@ void prepare_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm);
 void free_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm);
 
 void *merge_anno(void *arg);
-
 void *merge_files(void *arg);
 
 #endif // _CLASSPRO_H

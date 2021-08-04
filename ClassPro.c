@@ -14,12 +14,13 @@
 
 #include "const.c"
 #include "io.c"
-#include "emodel.c"
+#include "prob.c"
 #include "hist.c"
 #include "context.c"
+#include "emodel.c"
 #include "wall.c"
-#include "class.c"
-#include "prob.c"
+#include "class_rel.c"
+#include "class_unrel.c"
 
 bool VERBOSE;
 int  READ_LEN;
@@ -34,6 +35,7 @@ static void *kmer_class_thread(void *arg)
   const int      K      = P->kmer;
   const int      Km1    = K-1;
 
+  // TODO: make a struct to store all variables for a single read
   char        *seq;                   // Fetched sequence of the read
   uint16      *profile, *nprofile;    // Fetched profile of a read
   int          rlen, plen;            // `rlen` = `plen` + `Km1`
@@ -41,11 +43,9 @@ static void *kmer_class_thread(void *arg)
 
   Seq_Ctx     *ctx[N_WTYPE];          // Context lengths per position
   Seq_Ctx     *lctx, *_lctx, *rctx;
-
   P_Error     *perror, *cerror;       // Error probability per position
 
   double      *eta;                   // Parameter for PMM
-  double       lambda[2];             // H-cov, D-cov
 
   Error_Intvl *eintvl[N_ETYPE];
   Intvl       *intvl;
@@ -62,6 +62,8 @@ static void *kmer_class_thread(void *arg)
   DAZZ_DB     *db;
   DAZZ_READ   *r;
   char        *track, *crack;         // Data for dfile (crack = track + km1)
+
+#ifndef NO_WRITE
   int64        idx;                   // Data for afile
   char         header[MAX_NAME];
   DAZZ_STUB   *stub;
@@ -70,6 +72,7 @@ static void *kmer_class_thread(void *arg)
   int          map;
   FILE        *hdrs;
   char        *hdrs_name = "";   // dummy variable for `FGETS`
+#endif
 
   if (IS_DB)
     { db       = data->db;
@@ -79,6 +82,8 @@ static void *kmer_class_thread(void *arg)
       crack    = track + Km1;
       for (int i = 0; i < Km1; i++)
         track[i] = 0;
+
+#ifndef NO_WRITE
       idx = 0;
 
       if (!IS_DAM)
@@ -91,6 +96,7 @@ static void *kmer_class_thread(void *arg)
       else
         { hdrs = data->hdrs;
         }
+#endif
     }
   else
     { fxseq = data->fxseq;
@@ -231,21 +237,22 @@ static void *kmer_class_thread(void *arg)
       int rtot = 0;
       for (int i = 0; i < M; i++)
         rtot += rintvl[i].j - rintvl[i].i;
-      fprintf(stderr,"%d (/%d; %d %%) rel intvls, ",M,N,(int)(100.*rtot/plen));
+      fprintf(stderr,"%d (/%d; %d %%) rel intvls",M,N,(int)(100.*rtot/plen));
 #endif
 
       /*int nnorm = pmm_vi(profile,nprofile,plen,eta,lambda);
 
 #ifdef DEBUG_ITER
-      fprintf(stderr,"(H,D)=(%.lf,%.lf) (%d %% normal)\n",lambda[0],lambda[1],(int)(100.*nnorm/plen));
+      fprintf(stderr,", (H,D)=(%.lf,%.lf) (%d %% normal)",lambda[0],lambda[1],(int)(100.*nnorm/plen));
 #endif*/
 
-      // FIXME: experimental hard coding of global cov
-      lambda[0] = 20.;
-      lambda[1] = 40.;
+#ifdef DEBUG_ITER
+      fprintf(stderr,",\n");
+      fflush(stderr);
+#endif
 
-      classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,(int)lambda[0],(int)lambda[1]);
-      classify_unreliable(profile,plen,intvl,N,perror,(int)lambda[0],(int)lambda[1]);
+      classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,lambda_prior[0], lambda_prior[1]);
+      classify_unreliable(profile,plen,intvl,N,perror,lambda_prior[0], lambda_prior[1]);
 
       for (int i = 0; i < N; i++)
         for (int j = intvl[i].i; j < intvl[i].j; j++)
@@ -291,7 +298,7 @@ static void *kmer_class_thread(void *arg)
 #endif
     }
 
-#ifdef DEBUG_MERGE
+#if !defined(NO_WRITE) && defined(DEBUG_MERGE)
       fprintf(stderr,"last idx=%lld @thread %d\n",idx,data->wch);
       fflush(stderr);
 #endif
@@ -340,10 +347,10 @@ static Arg *parse_arg(int argc, char *argv[])
 
   ARG_INIT("ClassPro");
 
-  arg->nthreads = DEFAULT_NTHREADS;
+  arg->nthreads = (int)DEFAULT_NTHREADS;
   arg->cov      = -1;
-  arg->rlen     = DEFAULT_RLEN;
-  arg->tmp_path = DEFAULT_TMP_PATH;
+  arg->rlen     = (int)DEFAULT_RLEN;
+  arg->tmp_path = (char *)DEFAULT_TMP_PATH;
   arg->fk_root  = NULL;
   
   j = 1;

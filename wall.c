@@ -5,8 +5,6 @@
 #include <math.h>
 #include <float.h>
 
-#include "libfastk.h"
-#include "DB.h"
 #include "ClassPro.h"
 
 const int MAX_N_HC       = 5;   // Max # of bases in a single high-complexity error event

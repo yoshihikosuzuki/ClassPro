@@ -6,7 +6,7 @@ ALL = ClassPro ClassGS prof2class
 
 all: $(ALL)
 
-ClassPro: ClassPro.c ClassPro.h const.c io.c emodel.c hist.c context.c wall.c class.c bessel.c bessel.h prob.c prob.h kseq.h libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c QV.h
+ClassPro: ClassPro.c ClassPro.h const.c io.c emodel.c hist.c context.c wall.c class_rel.c class_unrel.c bessel.c bessel.h prob.c prob.h kseq.h libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c QV.h
 	$(CC) $(CFLAGS) -o $@ ClassPro.c libfastk.c DB.c QV.c $(LDFLAGS)
 
 ClassGS: ClassGS.c libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c QV.h

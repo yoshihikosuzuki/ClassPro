@@ -16,7 +16,7 @@ static char *Usage = "<source_root> <E/H_thres> <H/D_thres> <D/R_thres>";
 int main(int argc, char *argv[])
 { Profile_Index *P;
 
-  // NOTE: Only DAZZ_DB is accepted
+  // NOTE: Only DAZZ_DB is accepted for now
   DAZZ_DB    _db, *db = &_db;
   DAZZ_STUB  *stub = NULL;
   char      **flist;
