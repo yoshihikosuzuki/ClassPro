@@ -119,7 +119,7 @@ static inline double calc_logp_e_u(int idx, Intvl *intvl, uint16 *profile, int p
   return MAX(logp_po,logp_er);
 }
 
-static inline double calc_logp_r_u(int idx, Intvl *intvl, int N, uint16 *profile, int cov[])
+static inline double calc_logp_r_u(int idx, Intvl *intvl, int N, uint16 *profile, int plen, int cov[])
 { Intvl I = intvl[idx];
   double logp_er;
 
@@ -240,7 +240,7 @@ static void update_state_u(int idx, int d, Intvl *intvl, int N, uint16 *profile,
     { if (s == ERROR)
         logp = calc_logp_e_u(idx,intvl,profile,plen,perror,cov);
       else if (s == REPEAT)
-        logp = calc_logp_r_u(idx,intvl,N,profile,cov);
+        logp = calc_logp_r_u(idx,intvl,N,profile,plen,cov);
       else if (s == HAPLO)
         logp = calc_logp_h_u(idx,intvl,N,profile,perror,cov);
       else
@@ -326,12 +326,12 @@ void classify_unreliable(uint16 *profile, int plen, Intvl *intvl, int N, P_Error
   fflush(stderr);
 #endif
 
+#if defined(DEBUG_ITER) && defined(DEBUG_SINGLE)
   char asgn[plen];
   for (int i = 0; i < N; i++)
     for (int j = intvl[i].i; j < intvl[i].j; j++)
       asgn[j] = intvl[i].asgn;
 
-#if defined(DEBUG_ITER) && defined(DEBUG_SINGLE)
   fprintf(stderr,"  Final: ");
   for (int i = 0; i < plen; i++)
     fprintf(stderr,"%c",stoc[(int)asgn[i]]);

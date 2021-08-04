@@ -11,23 +11,23 @@
 #undef PARALLEL_WRITE
 // #define NREAD_PWRITE 100
 
-#define DEBUG_SINGLE
+#undef DEBUG_SINGLE
 #define DEBUG_SINGLE_ID 90
 #undef DEBUG_SMALL
 #define NREAD_SMALL 100
 
 #define DEBUG
-#define DEBUG_ITER
+#undef DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_CTX
 #undef DEBUG_ERROR
-#define DEBUG_INTVL
+#undef DEBUG_INTVL
 #undef DEBUG_COR
 #undef DEBUG_PMM
-#define DEBUG_PROB
+#undef DEBUG_PROB
 #undef DEBUG_DP
 #undef DEBUG_REL
-#define DEBUG_UNREL
+#undef DEBUG_UNREL
 #define DEBUG_SLIP
 #undef DEBUG_MERGE
 
@@ -45,7 +45,6 @@
 
 #include "libfastk.h"
 #include "DB.h"
-#include "prob.h"
 
 #include <zlib.h>
 #include "kseq.h"
@@ -163,7 +162,7 @@ typedef struct
     char   asgn;
   } Rel_Intvl;
 
-void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE],
+void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE],
                Error_Model *emodel, P_Error *perror, P_Error *cerror,
                Error_Intvl *eintvl[N_ETYPE], Intvl *intvl, Rel_Intvl *rintvl,
                int *wall, char *asgn, const int K, int *_N, int *_M);

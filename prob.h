@@ -7,6 +7,7 @@
 #include <math.h>
 #include <float.h>
 
+#include "ClassPro.h"
 #include "bessel.h"
 
 extern double logfact[32768];
@@ -14,7 +15,8 @@ extern double logfact[32768];
 void precompute_logfact();
 
 static inline double logp_poisson(int k, int lambda)
-{ return k * log((double)lambda) - lambda - logfact[k];
+{ k = MIN(k,32767);   // TODO: * dr_ratio can make imaginary count > 32767 (but should not be such a large count, why?)
+  return k * log((double)lambda) - lambda - logfact[k];
 }
 
 static inline double logp_skellam(int k, double lambda)
@@ -22,11 +24,15 @@ static inline double logp_skellam(int k, double lambda)
 }
 
 static inline double logp_binom(int k, int n, double p)
-{ return logfact[n] - logfact[k] - logfact[n-k] + k * log(p) + (n-k) * log(1-p);
+{ k = MIN(k,32767);
+  n = MIN(n,32767);
+  return logfact[n] - logfact[k] - logfact[n-k] + k * log(p) + (n-k) * log(1-p);
 }
 
 static inline double logp_binom_pre(int k, int n, double lpe, double l1mpe)
-{ return logfact[n] - logfact[k] - logfact[n-k] + k * lpe + (n-k) * l1mpe;
+{ k = MIN(k,32767);
+  n = MIN(n,32767);
+  return logfact[n] - logfact[k] - logfact[n-k] + k * lpe + (n-k) * l1mpe;
 }
 
 // TODO: chi-square when k,n are large

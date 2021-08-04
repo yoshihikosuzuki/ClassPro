@@ -1106,6 +1106,9 @@ void classify_reliable(Rel_Intvl *rintvl, int M, Intvl *intvl, int N, int plen, 
   
   DR_RATIO_R = 1.+N_SIGMA_R*(1./sqrt(cov[DIPLO]));
 
+  if (M == 0)   // TODO: use global cov?
+    return;
+
   double **dp_f, **dp_b;
   int ****st_f, ****st_b;
   char ***bt_f, ***bt_b;

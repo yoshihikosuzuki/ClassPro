@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 
 #include "ClassPro.h"
+#include "prob.h"
 
 #include "const.c"
 #include "io.c"
@@ -187,6 +188,14 @@ static void *kmer_class_thread(void *arg)
       calc_seq_context(_lctx,rctx,seq,rlen);
 
       plen = Fetch_Profile(P,(int64)id,rlen_max,profile);
+
+      for (int i = 0; i < plen; i++)
+        if (profile[i] > 32767)
+          { fprintf(stderr,"Read %d i=%d cnt=%d\n",id,i,profile[i]);
+            fflush(stderr);
+            exit(1);
+          }
+      // continue;
 
       if (rlen <= Km1)
         {

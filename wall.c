@@ -14,7 +14,7 @@ int       MAX_CNT_CHANGE = 5;   // Every count change > this becomes a wall cand
 const double pethres_init[N_ETYPE] = {0.001, 0.05};
 const double pethres[N_ETYPE]      = {1e-10, 1e-5};
 
-static void check_drop(int i, uint16 *profile, int plen, Seq_Ctx *ctx[2], Error_Model *emodel, P_Error *perror, Error_Intvl *eintvl[N_ETYPE], const int eidx, const int K)
+static void check_drop(int i, const uint16 *profile, int plen, Seq_Ctx *ctx[2], Error_Model *emodel, P_Error *perror, Error_Intvl *eintvl[N_ETYPE], const int eidx, const int K)
 { double max_p[N_ETYPE] = {-1., -1.};
   int    max_j[N_ETYPE] = {-1, -1};
 
@@ -150,7 +150,7 @@ static void check_drop(int i, uint16 *profile, int plen, Seq_Ctx *ctx[2], Error_
   return;
 }
 
-static void check_gain(int i, uint16 *profile, Seq_Ctx *ctx[2], Error_Model *emodel, P_Error *perror, Error_Intvl *eintvl[N_ETYPE], const int eidx, const int K)
+static void check_gain(int i, const uint16 *profile, Seq_Ctx *ctx[2], Error_Model *emodel, P_Error *perror, Error_Intvl *eintvl[N_ETYPE], const int eidx, const int K)
 { double max_p[N_ETYPE] = {-1., -1.};
   int    max_j[N_ETYPE] = {-1, -1};
 
@@ -285,7 +285,7 @@ static void check_gain(int i, uint16 *profile, Seq_Ctx *ctx[2], Error_Model *emo
   return;
 }
 
-static void correct_wall_cnt(int beg, int end, int *ci, int *cj, uint16 *profile, Seq_Ctx *ctx[N_WTYPE], const int K)
+static void correct_wall_cnt(int beg, int end, int *ci, int *cj, const uint16 *profile, Seq_Ctx *ctx[N_WTYPE], const int K)
 { int n_gain = 0, n_drop = 0;
   int first, last, lmax;
 
@@ -338,7 +338,7 @@ static void correct_wall_cnt(int beg, int end, int *ci, int *cj, uint16 *profile
   return;
 }
 
-void find_wall(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, P_Error *perror, P_Error *cerror, Error_Intvl *eintvl[N_ETYPE], Intvl *intvl, Rel_Intvl *rintvl, int *wall, char *asgn, const int K, int *_N, int *_M)
+void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, P_Error *perror, P_Error *cerror, Error_Intvl *eintvl[N_ETYPE], Intvl *intvl, Rel_Intvl *rintvl, int *wall, char *asgn, const int K, int *_N, int *_M)
 { int      N;
   int      cng, e, w;
   uint16   cin, cout;
