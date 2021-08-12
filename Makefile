@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -O0 -Wall -Wextra -Wno-unused-function
+CFLAGS = -O3 -Wall -Wextra -Wno-unused-function
 LDFLAGS = -lm -lz -lpthread
 
 ALL = ClassPro ClassGS prof2class

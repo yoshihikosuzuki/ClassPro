@@ -12,9 +12,9 @@
 // #define NREAD_PWRITE 100
 
 #undef DEBUG_SINGLE
-#define DEBUG_SINGLE_ID 90
+#define DEBUG_SINGLE_ID 5
 #undef DEBUG_SMALL
-#define NREAD_SMALL 100
+#define NREAD_SMALL 1000
 
 #define DEBUG
 #undef DEBUG_ITER

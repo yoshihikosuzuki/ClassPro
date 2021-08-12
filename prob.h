@@ -20,7 +20,7 @@ static inline double logp_poisson(int k, int lambda)
 }
 
 static inline double logp_skellam(int k, double lambda)
-{ return -2. * lambda + log(bessi(abs(k),2.*lambda));
+{ return -2. * lambda + log(bessi(abs(k),2.*lambda));   // TODO: precompute bessi?
 }
 
 static inline double logp_binom(int k, int n, double p)
