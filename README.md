@@ -1,4 +1,4 @@
-# ClassPro: A K-mer classifier (for HQ assembly data sets)
+# ClassPro: A K-mer classifier for HiFi reads
 
 A k-mer classification program using the [FASTK](https://github.com/thegenemyers/FASTK) software suite developed by Gene Myers.
 
