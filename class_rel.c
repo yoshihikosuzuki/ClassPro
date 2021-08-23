@@ -13,6 +13,8 @@ static const int    N_SIGMA_FLUC = 1;
 static double       DR_RATIO_R;
 static const double THRES_LOGP_FLUC = log(0.001);   // TODO: make `p_skellam` and use p?
 static const double THRES_LOGP_REP = -50.;
+static const double LOGP_E_BASE = -10.;
+static const double LOGP_R = -10.;
 static const double PE_MEAN = 0.01;
 static const int    POS_OFFSET = 1000;
 
@@ -184,13 +186,13 @@ static inline double calc_h_to_d_bw(int i, char *asgn, Rel_Intvl *rintvl, int M)
  *
  ********************************************************************************************/
 
-static inline double logp_e_fw(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror)
+static inline double logp_e_fw(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror, int cov[])
 { Rel_Intvl ri = rintvl[idx];
   double logp_l, logp_r;
   double logp_po, logp_er;
 
-  // logp_po = logp_poisson(ri.ci,cov[ERROR]);
-  logp_po = -INFINITY;
+  logp_po = logp_poisson(ri.ci,cov[ERROR])+LOGP_E_BASE;
+  // logp_po = -INFINITY;
   logp_er = -INFINITY;
   if (ri.i > 0)
     logp_er = log(perror[ri.i][SELF][DROP]);
@@ -200,8 +202,8 @@ static inline double logp_e_fw(int idx, Rel_Intvl *rintvl, int plen, P_Error *pe
   fprintf(stderr,"  [E L] logp(PO) = %.1lf, logp(ER) = %.1lf\n",logp_po,logp_er);
 #endif
 
-  // logp_po = logp_poisson(ri.cj,cov[ERROR]);
-  logp_po = -INFINITY;
+  logp_po = logp_poisson(ri.cj,cov[ERROR])+LOGP_E_BASE;
+  // logp_po = -INFINITY;
   logp_er = -INFINITY;
   if (ri.j < plen)
     logp_er = log(perror[ri.j][SELF][GAIN]);
@@ -214,8 +216,8 @@ static inline double logp_e_fw(int idx, Rel_Intvl *rintvl, int plen, P_Error *pe
   return logp_l+logp_r;
 }
 
-static inline double logp_e_bw(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror)
-{ return logp_e_fw(idx,rintvl,plen,perror);
+static inline double logp_e_bw(int idx, Rel_Intvl *rintvl, int plen, P_Error *perror, int cov[])
+{ return logp_e_fw(idx,rintvl,plen,perror,cov);
 }
 
 static inline double logp_r_fw(int idx, Rel_Intvl *rintvl, int cov[], int st[])
@@ -234,7 +236,7 @@ static inline double logp_r_fw(int idx, Rel_Intvl *rintvl, int cov[], int st[])
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
       fprintf(stderr,"(Larger than R-cov)\n          logp(R) = 0.\n");
 #endif
-      return 0.;
+      return LOGP_R;
     }
 
   if (MAX(ri.ci,ri.cj) >= pc)
@@ -242,7 +244,7 @@ static inline double logp_r_fw(int idx, Rel_Intvl *rintvl, int cov[], int st[])
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
       fprintf(stderr,"(Larger than imaginary R-cov = %d)\n          logp(R) = 0.\n",pc);
 #endif
-      return 0.;
+      return LOGP_R;
     }
 
   double _lambda = (double)pc*(ri.i-pe)/READ_LEN;
@@ -274,7 +276,7 @@ static inline double logp_r_bw(int idx, Rel_Intvl *rintvl, int cov[], int st[])
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
       fprintf(stderr," (Larger than R-cov)\n          logp(R) = 0.\n");
 #endif
-      return 0.;
+      return LOGP_R;
     }
 
   if (MAX(ri.ci,ri.cj) >= nc)
@@ -282,7 +284,7 @@ static inline double logp_r_bw(int idx, Rel_Intvl *rintvl, int cov[], int st[])
 #if defined(DEBUG_REL) && defined(DEBUG_PROB)
       fprintf(stderr,"(Larger than imaginary R-cov = %d)\n          logp(R) = 0.\n",nc);
 #endif
-      return 0.;
+      return LOGP_R;
     }
 
   double _lambda = (double)nc*(nb-ri.j+1)/READ_LEN;
@@ -380,16 +382,14 @@ static void forward_update(int i, double **dp, int ****st, char ***bt, bool *rep
 #endif
 
   // Compute and normalize transition probabilities so that \sum_{t'} p(s -> t') = 1
+  psum = 0.;
   for (int s = ERROR; s <= DIPLO; s++)
     { if (dp[i-1][s] == -INFINITY)
         continue;
-
       prev_st = st[i-1][s];
-      psum = 0.;
-
       for (int t = ERROR; t <= DIPLO; t++)
         { if (t == ERROR)
-            { logp = logp_e_fw(i,rintvl,plen,perror);
+            { logp = logp_e_fw(i,rintvl,plen,perror,cov);
             }
           else if (t == REPEAT)
             { // prev H < this R
@@ -452,7 +452,10 @@ static void forward_update(int i, double **dp, int ****st, char ***bt, bool *rep
           logp_trans[s][t] = exp(logp);
           psum += logp_trans[s][t];
         }
-
+    }
+  for (int s = ERROR; s <= DIPLO; s++)
+    { if (dp[i-1][s] == -INFINITY)
+        continue;
       for (int t = ERROR; t <= DIPLO; t++)
         logp_trans[s][t] = (psum > 0.) ? log(logp_trans[s][t]/psum) : -INFINITY;
     }
@@ -475,7 +478,7 @@ static void forward_update(int i, double **dp, int ****st, char ***bt, bool *rep
           if (max_logp < logp)
             { max_logp = logp;
               max_s = s;
-              if (t != REPEAT && logp > THRES_LOGP_REP)
+              if (t != REPEAT && logp_trans[s][t] > THRES_LOGP_REP)
                 only_r = false;
             }
         }
@@ -535,8 +538,9 @@ static void forward_update(int i, double **dp, int ****st, char ***bt, bool *rep
             }
           else if (t == REPEAT)
             { for (int s = HAPLO; s <= DIPLO; s++)
-                for (int n = 0; n < 2; n++)
-                  st[i][t][s][n] = st[i-1][max_s][s][n];
+                { st[i][t][s][0] = st[i-1][max_s][s][0];
+                  st[i][t][s][1] = ri.j-1-POS_OFFSET;
+                }
               if (st[i-1][max_s][REPEAT][0] < MIN(cov[REPEAT],ri.cj))
                 for (int n = 0; n < 2; n++)
                   st[i][t][REPEAT][n] = st[i-1][max_s][REPEAT][n];
@@ -675,18 +679,25 @@ static void forward_dp(double **dp, int ****st, char ***bt, bool *rep, char *asg
       bt[i][s][i] = s;
     }
   
-  dp[i][ERROR] = logp_e_fw(i,rintvl,plen,perror);
+  dp[i][ERROR] = logp_e_fw(i,rintvl,plen,perror,cov);
   dp[i][REPEAT] = logp_r_fw(i,rintvl,cov,st[i][REPEAT][REPEAT]);
   
   dp[i][HAPLO] = logp_poisson(ri.ci, cov[HAPLO]);
   st[i][HAPLO][HAPLO][0] = ri.cj;
   st[i][HAPLO][HAPLO][1] = ri.j-1;
+  st[i][HAPLO][DIPLO][0] = ri.cj*2;
+  st[i][HAPLO][DIPLO][1] = ri.j-1-POS_OFFSET;
+  st[i][HAPLO][REPEAT][0] = (int)(DR_RATIO_R*2*ri.cj);
+  st[i][HAPLO][REPEAT][1] = ri.j-1-POS_OFFSET;
+  
   
   dp[i][DIPLO] = logp_poisson(ri.ci, cov[DIPLO]);
+  st[i][DIPLO][HAPLO][0] = ri.cj/2;
+  st[i][DIPLO][HAPLO][1] = ri.j-1-POS_OFFSET;
   st[i][DIPLO][DIPLO][0] = ri.cj;
   st[i][DIPLO][DIPLO][1] = ri.j-1;
   st[i][DIPLO][REPEAT][0] = (int)(DR_RATIO_R*ri.cj);
-  st[i][DIPLO][REPEAT][1] = ri.j-1;
+  st[i][DIPLO][REPEAT][1] = ri.j-1-POS_OFFSET;
 
   double psum = 0.;
   for (int s = ERROR; s <= DIPLO; s++)
@@ -752,16 +763,14 @@ static void backward_update(int i, double **dp, int ****st, char ***bt, bool *re
 #endif
 
   // Compute and normalize transition probabilities so that \sum_{t'} p(t' <- s) = 1
+  psum = 0.;
   for (int s = ERROR; s <= DIPLO; s++)
     { if (dp[i+1][s] == -INFINITY)
         continue;
-
       next_st = st[i+1][s];
-      psum = 0.;
-
       for (int t = ERROR; t <= DIPLO; t++)
         { if (t == ERROR)
-            { logp = logp_e_bw(i,rintvl,plen,perror);
+            { logp = logp_e_bw(i,rintvl,plen,perror,cov);
             }
           else if (t == REPEAT)
             { // prev H < this R
@@ -823,7 +832,10 @@ static void backward_update(int i, double **dp, int ****st, char ***bt, bool *re
           logp_trans[s][t] = exp(logp);
           psum += logp_trans[s][t];
         }
-
+    }
+  for (int s = ERROR; s <= DIPLO; s++)
+    { if (dp[i+1][s] == -INFINITY)
+        continue;
       for (int t = ERROR; t <= DIPLO; t++)
         logp_trans[s][t] = (psum > 0.) ? log(logp_trans[s][t]/psum) : -INFINITY;
     }
@@ -846,7 +858,7 @@ static void backward_update(int i, double **dp, int ****st, char ***bt, bool *re
           if (max_logp < logp)
             { max_logp = logp;
               max_s = s;
-              if (t != REPEAT && logp > THRES_LOGP_REP)
+              if (t != REPEAT && logp_trans[s][t] > THRES_LOGP_REP)
                 only_r = false;
             }
         }
@@ -1044,18 +1056,24 @@ static void backward_dp(double **dp, int ****st, char ***bt, bool *rep, char *as
       bt[i][s][i] = s;
     }
   
-  dp[i][ERROR] = logp_e_bw(i,rintvl,plen,perror);
+  dp[i][ERROR] = logp_e_bw(i,rintvl,plen,perror,cov);
   dp[i][REPEAT] = logp_r_bw(i,rintvl,cov,st[i][REPEAT][REPEAT]);
   
   dp[i][HAPLO] = logp_poisson(ri.cj, cov[HAPLO]);
   st[i][HAPLO][HAPLO][0] = ri.ci;
   st[i][HAPLO][HAPLO][1] = ri.i;
+  st[i][HAPLO][DIPLO][0] = ri.ci*2;
+  st[i][HAPLO][DIPLO][1] = ri.i+POS_OFFSET;
+  st[i][HAPLO][REPEAT][0] = (int)(DR_RATIO_R*2*ri.ci);
+  st[i][HAPLO][REPEAT][1] = ri.i+POS_OFFSET;
   
   dp[i][DIPLO] = logp_poisson(ri.cj, cov[DIPLO]);
+  st[i][DIPLO][HAPLO][0] = ri.ci;
+  st[i][DIPLO][HAPLO][1] = ri.i+POS_OFFSET;
   st[i][DIPLO][DIPLO][0] = ri.ci;
   st[i][DIPLO][DIPLO][1] = ri.i;
   st[i][DIPLO][REPEAT][0] = (int)(DR_RATIO_R*ri.ci);
-  st[i][DIPLO][REPEAT][1] = ri.i;
+  st[i][DIPLO][REPEAT][1] = ri.i+POS_OFFSET;
 
   double psum = 0.;
   for (int s = ERROR; s <= DIPLO; s++)

@@ -1,8 +1,8 @@
 CC = gcc
-CFLAGS = -O3 -Wall -Wextra -Wno-unused-function
+CFLAGS = -g -O0 -Wall -Wextra -Wno-unused-function
 LDFLAGS = -lm -lz -lpthread
 
-ALL = ClassPro ClassGS prof2class
+ALL = ClassPro ClassGS prof2class class2acc
 
 all: $(ALL)
 
@@ -14,6 +14,9 @@ ClassGS: ClassGS.c libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c 
 
 prof2class: prof2class.c libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c QV.h
 	$(CC) $(CFLAGS) -o $@ prof2class.c libfastk.c DB.c QV.c $(LDFLAGS)
+
+class2acc: class2acc.c libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c QV.h
+	$(CC) $(CFLAGS) -o $@ class2acc.c libfastk.c DB.c QV.c $(LDFLAGS)
 
 clean:
 	rm -f $(ALL)

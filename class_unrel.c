@@ -9,6 +9,7 @@
 #include "ClassPro.h"
 
 static const int N_SIGMA_R_U     = 3;
+static const int N_SIGMA_HD_U    = 1;
 static double    DR_RATIO_U;
 static const int N_BASE_EST      = 1000;
 static const int N_BASE_EST_MIN  = 1;
@@ -221,7 +222,26 @@ static inline double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 
 }
 
 static inline double calc_logp_h_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
-{ return calc_logp_hd_u(HAPLO,idx,intvl,N,profile,perror,cov);
+{ Intvl I = intvl[idx];
+  int ibc = profile[I.i], iec = profile[I.j-1];
+  
+  // H must not exceed D - n_sigma
+  int nn_idx[2];
+  nn_intvl_u(idx,intvl,N,'D',nn_idx);
+  int p = nn_idx[0];
+  int n = nn_idx[1];
+  if (p >= 0)
+    { int pc = profile[intvl[p].j-1];
+      if (minus_sigma(pc,N_SIGMA_HD_U) < ibc)
+        return -INFINITY;
+    }
+  if (n < N)
+    { int nc = profile[intvl[n].i];
+      if (iec > minus_sigma(nc,N_SIGMA_HD_U))
+        return -INFINITY;
+    }
+
+  return calc_logp_hd_u(HAPLO,idx,intvl,N,profile,perror,cov);
 }
 
 static inline double calc_logp_d_u(int idx, Intvl *intvl, int N, uint16 *profile, P_Error *perror, int cov[])
