@@ -141,11 +141,7 @@ static void *kmer_class_thread(void *arg)
     goto class_exit;
 #endif
 
-#if !defined(DEBUG_SINGLE) && defined(DEBUG_SMALL)
-  for (int id = data->beg; id < data->beg+NREAD_SMALL; id++)
-#else
   for (int id = data->beg; id < data->end; id++)
-#endif
     { 
 #ifdef DEBUG_SINGLE
       if (id+1 < DEBUG_SINGLE_ID)
@@ -397,6 +393,9 @@ static Arg *parse_arg(int argc, char *argv[])
   arg->verbose    = flags['v'];
   arg->find_seeds = flags['s'];
   arg->nfiles     = argc-1;
+
+  if (arg->verbose)
+    fprintf(stderr,"Info about inputs:\n");
   
   // Input file names
   { int    fid, idx;
@@ -434,8 +433,10 @@ static Arg *parse_arg(int argc, char *argv[])
       arg->fk_root = Strdup(Catenate(path,"/",root,""),"Set fk_root");
 
     if (arg->verbose)
-      fprintf(stderr,"%d seq files (first file: path = %s  root = %s  ext = %s)\nFASTK root = %s\n",
-                     arg->nfiles,path,root,EXT[idx],arg->fk_root);
+      { fprintf(stderr,"    # of sequence files   = %d\n",arg->nfiles);
+        fprintf(stderr,"    First (path,root,ext) = (%s, %s, %s)\n",path,root,EXT[idx]);
+        fprintf(stderr,"    FASTK outputs' root   = %s\n",arg->fk_root);
+      }
 
     // Set full path
     arg->snames = Malloc(sizeof(char *)*arg->nfiles,"Allocating fnames");
@@ -482,7 +483,7 @@ static Arg *parse_arg(int argc, char *argv[])
     closedir(dirp);
     
     if (arg->verbose)
-      fprintf(stderr,"Temp dir path = %s\n",arg->tmp_path);
+      fprintf(stderr,"    Temp dir path         = %s\n",arg->tmp_path);
   }
 
   return arg;
@@ -520,7 +521,9 @@ int main(int argc, char *argv[])
     arg->nparts = (arg->nreads / arg->nthreads) + (arg->nreads % arg->nthreads == 0 ? 0 : 1);
 
     if (arg->verbose)
-      fprintf(stderr,"Total # of reads = %d, # of reads per thread = %d\n",arg->nreads,arg->nparts);
+      { fprintf(stderr,"    Total # of reads      = %d\n",arg->nreads);
+        fprintf(stderr,"    # of reads per thread = %d\n",arg->nparts);
+      }
 
     precompute_logfact();
     precompute_digamma();

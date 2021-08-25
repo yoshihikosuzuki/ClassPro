@@ -37,12 +37,15 @@ void process_global_hist(char *FK_ROOT, int COVERAGE)
   Modify_Histogram(H,H->low,H->high,0);
   hist = H->hist;
 
+  if (VERBOSE)
+    fprintf(stderr,"Global histogram inspection:\n");
+
   // Find H/D peaks (= mean depths)
   if (COVERAGE != -1)
     { lambda_prior[1] = COVERAGE;
       lambda_prior[0] = COVERAGE >> 1;
       if (VERBOSE)
-        fprintf(stderr,"Specified (H,D) peaks = (%d,%d)\n",lambda_prior[0],lambda_prior[1]);
+        fprintf(stderr,"    Specified (H,D) cov   = (%d,%d)\n",lambda_prior[0],lambda_prior[1]);
     }
   else
     { int        maxcnt;               // Tallest peak; Assuming this is H or D
@@ -60,11 +63,11 @@ void process_global_hist(char *FK_ROOT, int COVERAGE)
             }
         }
       if (maxcnt < 10)
-        { fprintf(stderr,"Could not find any peaks @ >= 10 in the histogram. Revise data or use -c.");
+        { fprintf(stderr,"[ERROR] Could not find any peak count >= 10 in the histogram. Revise data and use the `-c` option.");
           exit(1);
         }
       else if (VERBOSE)
-        fprintf(stderr,"Found tallest peak at %d (%lld)\n",maxcnt,maxpk);
+        fprintf(stderr,"    Tallest peak count    = %d (# of k-mers = %lld)\n",maxcnt,maxpk);
 
       m = (double)maxcnt/2;
       s = sqrt(m);
@@ -98,7 +101,7 @@ void process_global_hist(char *FK_ROOT, int COVERAGE)
         }
 
       if (VERBOSE)
-        fprintf(stderr,"Estimated (H,D) peaks = (%d,%d)\n",lambda_prior[0],lambda_prior[1]);
+        fprintf(stderr,"    Estimated (H,D) cov   = (%d,%d)\n",lambda_prior[0],lambda_prior[1]);
     }
 
   // Determine hyperparameters
@@ -125,13 +128,13 @@ void process_global_hist(char *FK_ROOT, int COVERAGE)
 
   if (VERBOSE)
     { fprintf(stderr,"Hyperparameters etc. for PMM:\n");
-      fprintf(stderr,"    lambda_prior       = (%d,%d)\n",lambda_prior[0],lambda_prior[1]);
-      fprintf(stderr,"    a_prior            = (%d,%d)\n",a_prior[0],a_prior[1]);
-      fprintf(stderr,"    b_prior            = (%d,%d)\n",b_prior[0],b_prior[1]);
-      fprintf(stderr,"    alpha_prior        = (%d,%d)\n",alpha_prior[0],alpha_prior[1]);
-      fprintf(stderr,"    dg_sum_alpha_prior = %lf\n",dg_sum_alpha_prior);
-      fprintf(stderr,"    eta_weight_k_prior = (%lf,%lf)\n",eta_weight_k_prior[0],eta_weight_k_prior[1]);
-      fprintf(stderr,"    eta_const_k_prior  = (%lf,%lf)\n",eta_const_k_prior[0],eta_const_k_prior[1]);
+      fprintf(stderr,"    lambda_prior          = (%d,%d)\n",lambda_prior[0],lambda_prior[1]);
+      fprintf(stderr,"    a_prior               = (%d,%d)\n",a_prior[0],a_prior[1]);
+      fprintf(stderr,"    b_prior               = (%d,%d)\n",b_prior[0],b_prior[1]);
+      fprintf(stderr,"    alpha_prior           = (%d,%d)\n",alpha_prior[0],alpha_prior[1]);
+      fprintf(stderr,"    dg_sum_alpha_prior    = %lf\n",dg_sum_alpha_prior);
+      fprintf(stderr,"    eta_weight_k_prior    = (%lf,%lf)\n",eta_weight_k_prior[0],eta_weight_k_prior[1]);
+      fprintf(stderr,"    eta_const_k_prior     = (%lf,%lf)\n",eta_const_k_prior[0],eta_const_k_prior[1]);
     }
 
   Free_Histogram(H);

@@ -483,6 +483,22 @@ static void forward_update(int i, double **dp, int ****st, char ***bt, bool *rep
             }
         }
     }
+  // for (int s = ERROR; s <= DIPLO; s++)
+  //   { if (dp[i-1][s] == -INFINITY)
+  //       continue;
+  //     max_logp = -INFINITY;
+  //     max_s = -1;   // NOTE: max_t
+  //     for (int t = ERROR; t <= DIPLO; t++)
+  //       { logp = dp[i-1][s]+logp_trans[s][t];
+  //         if (max_logp < logp)
+  //           { max_logp = logp;
+  //             max_s = t;
+  //           }
+  //       }
+  //     if (max_s != REPEAT)
+  //       only_r = false;
+  //       break;
+  //   }
 
   if (only_r)
     { 
@@ -687,8 +703,8 @@ static void forward_dp(double **dp, int ****st, char ***bt, bool *rep, char *asg
   st[i][HAPLO][HAPLO][1] = ri.j-1;
   st[i][HAPLO][DIPLO][0] = ri.cj*2;
   st[i][HAPLO][DIPLO][1] = ri.j-1-POS_OFFSET;
-  st[i][HAPLO][REPEAT][0] = (int)(DR_RATIO_R*2*ri.cj);
-  st[i][HAPLO][REPEAT][1] = ri.j-1-POS_OFFSET;
+  // st[i][HAPLO][REPEAT][0] = (int)(DR_RATIO_R*2*ri.cj);
+  // st[i][HAPLO][REPEAT][1] = ri.j-1-POS_OFFSET;
   
   
   dp[i][DIPLO] = logp_poisson(ri.ci, cov[DIPLO]);
@@ -696,8 +712,8 @@ static void forward_dp(double **dp, int ****st, char ***bt, bool *rep, char *asg
   st[i][DIPLO][HAPLO][1] = ri.j-1-POS_OFFSET;
   st[i][DIPLO][DIPLO][0] = ri.cj;
   st[i][DIPLO][DIPLO][1] = ri.j-1;
-  st[i][DIPLO][REPEAT][0] = (int)(DR_RATIO_R*ri.cj);
-  st[i][DIPLO][REPEAT][1] = ri.j-1-POS_OFFSET;
+  // st[i][DIPLO][REPEAT][0] = (int)(DR_RATIO_R*ri.cj);
+  // st[i][DIPLO][REPEAT][1] = ri.j-1-POS_OFFSET;
 
   double psum = 0.;
   for (int s = ERROR; s <= DIPLO; s++)
@@ -863,6 +879,22 @@ static void backward_update(int i, double **dp, int ****st, char ***bt, bool *re
             }
         }
     }
+  // for (int s = ERROR; s <= DIPLO; s++)
+  //   { if (dp[i+1][s] == -INFINITY)
+  //       continue;
+  //     max_logp = -INFINITY;
+  //     max_s = -1;   // NOTE: max_t
+  //     for (int t = ERROR; t <= DIPLO; t++)
+  //       { logp = dp[i+1][s]+logp_trans[s][t];
+  //         if (max_logp < logp)
+  //           { max_logp = logp;
+  //             max_s = t;
+  //           }
+  //       }
+  //     if (max_s != REPEAT)
+  //       only_r = false;
+  //       break;
+  //   }
 
   if (only_r)
     { 
@@ -1064,16 +1096,16 @@ static void backward_dp(double **dp, int ****st, char ***bt, bool *rep, char *as
   st[i][HAPLO][HAPLO][1] = ri.i;
   st[i][HAPLO][DIPLO][0] = ri.ci*2;
   st[i][HAPLO][DIPLO][1] = ri.i+POS_OFFSET;
-  st[i][HAPLO][REPEAT][0] = (int)(DR_RATIO_R*2*ri.ci);
-  st[i][HAPLO][REPEAT][1] = ri.i+POS_OFFSET;
+  // st[i][HAPLO][REPEAT][0] = (int)(DR_RATIO_R*2*ri.ci);
+  // st[i][HAPLO][REPEAT][1] = ri.i+POS_OFFSET;
   
   dp[i][DIPLO] = logp_poisson(ri.cj, cov[DIPLO]);
   st[i][DIPLO][HAPLO][0] = ri.ci;
   st[i][DIPLO][HAPLO][1] = ri.i+POS_OFFSET;
   st[i][DIPLO][DIPLO][0] = ri.ci;
   st[i][DIPLO][DIPLO][1] = ri.i;
-  st[i][DIPLO][REPEAT][0] = (int)(DR_RATIO_R*ri.ci);
-  st[i][DIPLO][REPEAT][1] = ri.i+POS_OFFSET;
+  // st[i][DIPLO][REPEAT][0] = (int)(DR_RATIO_R*ri.ci);
+  // st[i][DIPLO][REPEAT][1] = ri.i+POS_OFFSET;
 
   double psum = 0.;
   for (int s = ERROR; s <= DIPLO; s++)

@@ -116,7 +116,7 @@ static void check_drop(int i, const uint16 *profile, int plen, Seq_Ctx *ctx[2], 
           if (j >= plen)
             continue;
 
-          if (profile[j-1]>profile[j])
+          if (profile[j-1]>=profile[j])   // NOTE: not allowing tie counts
             { perror[j][SELF][GAIN] = 0.;
               perror[j][OTHERS][GAIN] = 1.;
             }
@@ -253,7 +253,7 @@ static void check_gain(int i, const uint16 *profile, Seq_Ctx *ctx[2], Error_Mode
           if (j <= 0)
             continue;
 
-          if (profile[j-1]<profile[j])
+          if (profile[j-1]<=profile[j])   // not allowing tie counts
             { perror[j][SELF][DROP] = 0.;
               perror[j][OTHERS][DROP] = 1.;
             }
@@ -534,6 +534,7 @@ void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mod
     if (eintvl[e][i].pe >= pethres[e])
       asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 0;
   // Include walls that can be explained by errors in self
+  // e = SELF;
   // for (int i = 0; i < eidx; i++)
   //   if (eintvl[e][i].pe >= pethres[e])
   //     asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 1;
@@ -544,8 +545,10 @@ void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mod
     is_error[i] = false;
   for (int i = 0; i < eidx; i++)
     if (eintvl[SELF][i].pe >= pethres[SELF])
-      for (int j = eintvl[SELF][i].i; j < eintvl[SELF][i].j; j++)
-        is_error[j] = true;
+      { //fprintf(stderr,"Eintvl[%d] = (%d,%d)\n",i,eintvl[SELF][i].i,eintvl[SELF][i].j);
+        for (int j = eintvl[SELF][i].i; j < eintvl[SELF][i].j; j++)
+          is_error[j] = true;
+      }
   for (int i = 1; i < plen; i++)
     if (is_error[i-1] != is_error[i])
       asgn[i] = 1;

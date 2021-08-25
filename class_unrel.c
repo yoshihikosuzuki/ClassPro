@@ -181,7 +181,9 @@ static inline double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 
     { double _lambda = (double)cov[s]*(I.i-intvl[p].j+1)/READ_LEN;
       logp_sf = logp_skellam(profile[I.i]-profile[intvl[p].j-1],_lambda);
       if (intvl[p].j == I.i)
-        logp_er = log(MIN(perror[I.i][OTHERS][DROP],perror[I.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
+        { //fprintf(stderr,"intvl (%d,%d).b: pOD=%lf, pOG=%lf\n",I.i,I.j,perror[I.i][OTHERS][DROP],perror[I.i][OTHERS][GAIN]);
+          logp_er = log(MIN(perror[I.i][OTHERS][DROP],perror[I.i][OTHERS][GAIN]));   // TODO: MIN? MAX?
+        }
       else
         logp_er = -INFINITY;
       logp_l = MAX(logp_sf,logp_er);
@@ -195,7 +197,9 @@ static inline double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 
     { double _lambda = (double)cov[s]*(intvl[n].i-I.j+1)/READ_LEN;
       logp_sf = logp_skellam(profile[intvl[n].i]-profile[I.j-1],_lambda);
       if (I.j == intvl[n].i)
-        logp_er = log(MIN(perror[I.j][OTHERS][DROP],perror[I.j][OTHERS][GAIN]));
+        { //fprintf(stderr,"intvl (%d,%d).e: pOD=%lf, pOG=%lf\n",I.i,I.j,perror[I.j][OTHERS][DROP],perror[I.j][OTHERS][GAIN]);
+          logp_er = log(MIN(perror[I.j][OTHERS][DROP],perror[I.j][OTHERS][GAIN]));
+        }
       else
         logp_er = -INFINITY;
       logp_r = MAX(logp_sf,logp_er);
@@ -206,7 +210,7 @@ static inline double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 
     }
 
   if (p < 0 || n >= N)
-    { if (p < 0 && n >= N)   // TODO: allow short, isolated intervals to be H/D?
+    { if (p < 0 && n >= N)   // TODO: global cov can be wrong
         { logp_l = logp_poisson(profile[I.i],cov[s]);
           logp_r = logp_poisson(profile[I.j-1],cov[s]);
         }
@@ -216,8 +220,6 @@ static inline double calc_logp_hd_u(int s, int idx, Intvl *intvl, int N, uint16 
         logp_r = logp_l;
     }
 
-  // return MIN(logp_l,logp_r);
-  // return MAX(logp_l,logp_r);
   return logp_l+logp_r;
 }
 
@@ -311,6 +313,9 @@ static int compare_iic(const void *a, const void *b)
 void classify_unreliable(uint16 *profile, int plen, Intvl *intvl, int N, P_Error *perror, int hcov, int dcov)
 { int cov[N_STATE] = {1, dcov+6*(int)sqrt(dcov), hcov, dcov};
   DR_RATIO_U = 1.+N_SIGMA_R_U*(1./sqrt(cov[DIPLO]));
+
+  // If no H/D-mers, then do initial classification
+  // int local_cov[N_STATE] = {1, }
 
   bool is_fixed[N];
   for (int i = 0; i < N; i++)
