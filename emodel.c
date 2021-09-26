@@ -68,7 +68,7 @@ Error_Model *calc_init_thres()
             int s_found = 0, o_found = 0;
             psum = 1.;
             for (cin = 0; cin <= cout; cin++)
-              { emodel[t].pe_bt[l][idx] = (psum > 0.) ? psum : 0.;
+              { emodel[t].pe_bt[l][idx] = (psum > 0.) ? psum : 0.;   // TODO: delete _bt and remove this and make break statement
                 idx++;
                 psum -= exp(logp_binom_pre(cin,cout,lpe,l1mpe));
 

@@ -1,6 +1,8 @@
 ClassPro
 ClassGS
 prof2class
+class2acc
+class2cns
 
 *.old.c
 hoge.c

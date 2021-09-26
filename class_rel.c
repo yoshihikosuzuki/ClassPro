@@ -307,6 +307,7 @@ static inline double logp_hd_fw(int s, int idx, Rel_Intvl *rintvl, P_Error *cerr
   double logp_sf, logp_er;
 
   double _lambda = (double)cov[s]*(ri.i-pe)/READ_LEN;
+  // double _lambda = (double)pc*(ri.i-pe)/READ_LEN;
   logp_sf = logp_skellam(ri.ci-pc,_lambda);
   logp_er = -INFINITY;   // TODO: do not use count at drop/gain by errors in others as H/D-cov
   // if (pe+1 == ri.i)
@@ -328,6 +329,7 @@ static inline double logp_hd_bw(int s, int idx, Rel_Intvl *rintvl, P_Error *cerr
   double logp_sf, logp_er;
 
   double _lambda = (double)cov[s]*(nb-ri.j+1)/READ_LEN;
+  // double _lambda = (double)nc*(nb-ri.j+1)/READ_LEN;
   logp_sf = logp_skellam(nc-ri.cj,_lambda);
   logp_er = -INFINITY;   // TODO: do not use count at drop/gain by errors in others as H/D-cov
   // if (ri.j == nb)
