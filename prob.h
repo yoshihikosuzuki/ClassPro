@@ -10,12 +10,29 @@
 #include "ClassPro.h"
 #include "bessel.h"
 
-extern double logfact[32768];
+#define MAX_KMER_CNT 32768
+double logfact[MAX_KMER_CNT];
 
-void precompute_logfact();
+static inline void precompute_logfact()
+{ for (int n = 1; n < MAX_KMER_CNT; n++)
+    logfact[n] = logfact[n-1]+log(n);
+
+  return;
+}
+
+static inline void _check_cnt(int n)
+{
+#ifdef DEBUG
+  if (n >= MAX_KMER_CNT)
+    { fprintf(stderr,"K-mer count (%d) >= %d (due to D/R ratio?)\n",n,MAX_KMER_CNT);
+      exit(1);
+    }
+#endif
+  return;
+}
 
 static inline double logp_poisson(int k, int lambda)
-{ k = MIN(k,32767);   // TODO: * dr_ratio can make imaginary count > 32767 (but should not be such a large count, why?)
+{ _check_cnt(k);
   return k * log((double)lambda) - lambda - logfact[k];
 }
 
@@ -23,21 +40,39 @@ static inline double logp_skellam(int k, double lambda)
 { return -2. * lambda + log(bessi(abs(k),2.*lambda));   // TODO: precompute bessi?
 }
 
+static inline double logp_fluctuation(int i, int j, int ci, int cj, int mean_cov)
+{ double _lambda = (double)mean_cov*(j-i)/READ_LEN;
+  double logp = logp_skellam(cj-ci,_lambda);
+  return logp;
+}
+
+static inline void _check_cnt_binom(int k, int n)
+{ _check_cnt(k);
+  _check_cnt(n);
+#ifdef DEBUG
+  if (k > n)
+    { fprintf(stderr,"k (%d) > n (%d) in Binom\n",k,n);
+      exit(1);
+    }
+#endif
+  return;
+}
+
 static inline double logp_binom(int k, int n, double p)
-{ k = MIN(k,32767);
-  n = MIN(n,32767);
+{ _check_cnt_binom(k,n);
   return logfact[n] - logfact[k] - logfact[n-k] + k * log(p) + (n-k) * log(1-p);
 }
 
 static inline double logp_binom_pre(int k, int n, double lpe, double l1mpe)
-{ k = MIN(k,32767);
-  n = MIN(n,32767);
+{ _check_cnt_binom(k,n);
   return logfact[n] - logfact[k] - logfact[n-k] + k * lpe + (n-k) * l1mpe;
 }
 
-// TODO: chi-square when k,n are large
+// TODO: chi-square is faster when k,n are large?
 static inline double binom_test_g(int k, int n, double pe, int exact)
-{ const double lpe   = log(pe);   // TODO: precompute in error models?
+{ _check_cnt_binom(k,n);
+
+  const double lpe   = log(pe);   // TODO: precompute in error models?
   const double l1mpe = log(1-pe);
   const double mean  = n*pe;
   const int decrease = ((double)k >= mean) ? 1 : 0;

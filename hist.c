@@ -104,6 +104,7 @@ void process_global_hist(char *FK_ROOT, int COVERAGE)
         fprintf(stderr,"    Estimated (H,D) cov   = (%d,%d)\n",lambda_prior[0],lambda_prior[1]);
     }
 
+#ifdef DO_PMM
   // Determine hyperparameters
   double totpk[2];   // Estimated total k-mer frequency in H/D components
   double p;
@@ -136,6 +137,7 @@ void process_global_hist(char *FK_ROOT, int COVERAGE)
       fprintf(stderr,"    eta_weight_k_prior    = (%lf,%lf)\n",eta_weight_k_prior[0],eta_weight_k_prior[1]);
       fprintf(stderr,"    eta_const_k_prior     = (%lf,%lf)\n",eta_const_k_prior[0],eta_const_k_prior[1]);
     }
+#endif
 
   Free_Histogram(H);
 }
@@ -146,8 +148,8 @@ int pmm_vi(uint16 *profile, uint16 *nprofile, int plen, double *eta, double lamb
   double a[2], b[2], alpha[2], eta_weight_k[2], eta_const_k[2];
   double eta_sum, dg_sum_alpha;
 
-  const int ethres = lambda_prior[0]-3*(int)sqrt(lambda_prior[0]);
-  const int rthres = lambda_prior[1]+3*(int)sqrt(lambda_prior[1]);
+  const int ethres = minus_sigma(lambda_prior[0],3);
+  const int rthres = plus_sigma(lambda_prior[1],3);
 
   for (int k = 0; k < 2; k++)
     { a[k]      = a_prior[k];

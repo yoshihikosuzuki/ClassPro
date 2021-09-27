@@ -7,15 +7,6 @@
 
 #include "ClassPro.h"
 
-const int MAX_N_HC       = 5;   // Max # of bases in a single high-complexity error event
-int       MIN_CNT_CHANGE = 2;   // Every count change at a wall must be > this
-int       MAX_CNT_CHANGE = 5;   // Every count change > this becomes a wall candidate(H-cov?)
-
-static const double THRES_LOGP_DIFF = log(1e-20);
-
-const double pethres_init[N_ETYPE] = {0.001, 0.05};
-const double pethres[N_ETYPE]      = {1e-10, 1e-5};
-
 static inline double logp_diff(int cout_drop, int cin_drop, int cin_gain, int cout_gain)
 { int ndrop = cout_drop - cin_drop;
   int ngain = cout_gain - cin_gain;

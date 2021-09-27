@@ -24,20 +24,6 @@ static const int    POS_OFFSET = 1000;
  *
  ********************************************************************************************/
 
-static inline int plus_sigma(int cnt, int n_sigma)
-{ return cnt + (int)(n_sigma * sqrt(cnt));
-}
-
-static inline int minus_sigma(int cnt, int n_sigma)
-{ return cnt - (int)(n_sigma * sqrt(cnt));
-}
-
-static inline double logp_fluctuation(int i, int j, int ci, int cj, int mean_cov)
-{ double _lambda = (double)mean_cov*(j-i)/READ_LEN;
-  double logp = logp_skellam(cj-ci,_lambda);
-  return logp;
-}
-
 static inline int find_nn_fw(int i, int s, char *asgn, int end)
 { int idx = i;
   while (idx < end && asgn[idx] != s)

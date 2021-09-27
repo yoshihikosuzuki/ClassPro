@@ -12,10 +12,10 @@
 
 #include "ClassPro.h"
 #include "prob.h"
+#include "util.h"
 
 #include "const.c"
 #include "io.c"
-#include "prob.c"
 #include "hist.c"
 #include "context.c"
 #include "emodel.c"
@@ -27,6 +27,7 @@ bool VERBOSE;
 int  READ_LEN;
 bool IS_DB;
 bool IS_DAM;
+int  GLOBAL_COV[N_STATE];
 
 static void *kmer_class_thread(void *arg)
 { // Shared parameters & constants
@@ -44,8 +45,11 @@ static void *kmer_class_thread(void *arg)
   // Variables for classification
   int            rlen_max, rlen, plen;   // `rlen` = `plen` + `Km1`
   char          *seq = NULL;             // Fetched sequence of the read
-  uint16        *profile, *nprofile;     // Fetched profile of a read
-  // double        *eta;                    // Parameter for PMM
+  uint16        *profile;                // Fetched profile of a read
+#ifdef DO_PMM
+  uint16        *nprofile;               // Normal counts for PMM
+  double        *eta;                    // Parameter for PMM
+#endif
   Seq_Ctx       *ctx[N_WTYPE], *lctx, *_lctx, *rctx;   // Context lengths per position
   P_Error       *perror, *cerror;        // Error probability per position
   int           *wall;                   // Wall positions
@@ -117,9 +121,11 @@ static void *kmer_class_thread(void *arg)
     wall     = Malloc(rlen_max*sizeof(int),"Wall array");
     perror   = Malloc(rlen_max*sizeof(P_Error),"Error prob");
     cerror   = Malloc(rlen_max*sizeof(P_Error),"Error prob");
-    // eta      = Malloc(rlen_max*2*sizeof(double),"PMM eta");
     profile  = Malloc(rlen_max*sizeof(uint16),"Profile array");
+#ifdef DO_PMM
     nprofile = Malloc(rlen_max*sizeof(uint16),"Normal profile array");
+    eta      = Malloc(rlen_max*2*sizeof(double),"PMM eta");
+#endif
 
     _lctx    = Malloc(rlen_max*sizeof(Seq_Ctx),"Allocating left ctx vector");
     rctx     = Malloc(rlen_max*sizeof(Seq_Ctx),"Allocating right ctx vector");
@@ -238,11 +244,13 @@ static void *kmer_class_thread(void *arg)
       fprintf(stderr,"%d (/%d; %d %%) rel intvls",M,N,(int)(100.*rtot/plen));
 #endif
 
-      // Local coverage estimation via Poisson mixture model (obsolete)
-//       int nnorm = pmm_vi(profile,nprofile,plen,eta,lambda);
-// #ifdef DEBUG_ITER
-//       fprintf(stderr,", (H,D)=(%.lf,%.lf) (%d %% normal)",lambda[0],lambda[1],(int)(100.*nnorm/plen));
-// #endif
+#ifdef DO_PMM
+      // Local coverage estimation via Poisson mixture model (optional)
+      int nnorm = pmm_vi(profile,nprofile,plen,eta,lambda);
+#ifdef DEBUG_ITER
+      fprintf(stderr,", (H,D)=(%.lf,%.lf) (%d %% normal)",lambda[0],lambda[1],(int)(100.*nnorm/plen));
+#endif
+#endif   // DO_PMM
 
 #ifdef DEBUG_ITER
       fprintf(stderr,",\n");
@@ -292,7 +300,10 @@ static void *kmer_class_thread(void *arg)
 #endif
     }
   free(profile);
+#ifdef DO_PMM
   free(nprofile);
+  free(eta);
+#endif
   free(_lctx);
   free(rctx);
   free(perror);
@@ -303,7 +314,6 @@ static void *kmer_class_thread(void *arg)
   free(rintvl);
   free(wall);
   free(rasgn);
-  // free(eta);
 
 #ifdef DEBUG_SINGLE
 class_exit:
@@ -508,6 +518,10 @@ int main(int argc, char *argv[])
 
     // 4. Global Haploid/Diploid coverages
     process_global_hist(arg->fk_root,arg->cov);
+    GLOBAL_COV[HAPLO] = lambda_prior[0];
+    GLOBAL_COV[DIPLO] = lambda_prior[1];
+    GLOBAL_COV[ERROR] = 1;
+    GLOBAL_COV[REPEAT] = plus_sigma(GLOBAL_COV[DIPLO],N_SIGMA_RCOV);
 
     // 5. Thresholds of a count change due to errors in self and errors in others
     //    Context-specific sequcning error model is also loaded

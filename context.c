@@ -86,7 +86,7 @@ void calc_seq_context(Seq_Ctx *lctx, Seq_Ctx *rctx, char *seq, const int rlen)
   const Seq_Ctx *ctx[N_WTYPE]  = {lctx, rctx};
   const char    *dir[N_WTYPE]  = {"L", "R"};
   const char    *name[N_CTYPE] = {"HP", "DS", "TS"};
-  const int      W = 50;
+  const int      W             = 50;
 
   fprintf(stderr,"Seq  %.*s...%.*s\n",W,seq,W,seq+rlen-W);
   for (int t = HP; t <= TS; t++)

@@ -11,8 +11,9 @@
 #undef PARALLEL_WRITE   // Experimental mode of parallel write to .class file   // NOTE: currently unavailable for macOS
 // #define NREAD_PWRITE 100   // Number of reads per write in parallel-write mode
 #undef WRITE_TRACK   // Output DAZZ track of classifications as well
+#undef DO_PMM
 
-#undef DEBUG_SINGLE   // Single-read mode. No files are output
+#define DEBUG_SINGLE   // Single-read mode. No files are output
 #define DEBUG_SINGLE_ID 55   // Read ID in single-read mode
 // Never output DAZZ track in single-read mode
 #ifdef DEBUG_SINGLE
@@ -20,11 +21,11 @@
 #endif
 
 #define DEBUG
-#undef DEBUG_ITER
+#define DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_CTX
 #undef DEBUG_ERROR
-#define DEBUG_INTVL
+#undef DEBUG_INTVL
 #undef DEBUG_COR
 #undef DEBUG_PMM
 #undef DEBUG_PROB
@@ -64,10 +65,11 @@ extern const int   DEFAULT_RLEN;
 extern const char *DEFAULT_TMP_PATH;
 extern const int   MERGE_BUF_SIZE;
 extern const int   MAX_READ_LEN;
+extern const int   N_SIGMA_RCOV;
 
 /*******************************************************************************************
  *
- *  SHARED ARGUMENT PARAMETERS
+ *  SHARED PARAMETERS
  *
  ********************************************************************************************/
 
@@ -75,6 +77,7 @@ extern bool  VERBOSE;
 extern int   READ_LEN;
 extern bool  IS_DB;
 extern bool  IS_DAM;
+extern int   GLOBAL_COV[N_STATE];
 
 /*******************************************************************************************
  *
@@ -106,17 +109,16 @@ void calc_seq_context(Seq_Ctx *lctx, Seq_Ctx *rctx, char *seq, const int rlen);
  *
  ********************************************************************************************/
 
-extern int CMAX;   // max "c_out" considered in the error model
+enum ThresT { INIT, FINAL, N_THRES };
 
-#define CIDX(cout, cin) ((cout)*(((cout)+1))>>1)+(cin)-1
+extern const int    MAX_N_LC;
+extern const double PE_THRES[N_THRES][N_ETYPE];
+extern int          CMAX;
 
 typedef struct
-  { uint8      lmax;    // Maximum feature length considered
-    double    *pe;      // Error probability given feature length
-    //double    *lpe;     // Log error probability
-    //double    *l1mpe;   // Log (1 - error probability)
-    double   **pe_bt;
-    int    ***cthres;
+  { uint8      lmax;   // Maximum feature length considered
+    double    *pe;         // Error probability given feature length
+    uint8  ****cthres;     // Threshold of count change
   } Error_Model;
 
 Error_Model *calc_init_thres();
@@ -129,11 +131,11 @@ void free_emodel(Error_Model *emodel);
  *
  ********************************************************************************************/
 
-extern const int MAX_N_HC;
-extern int       MIN_CNT_CHANGE;
-extern int       MAX_CNT_CHANGE;
-extern const double pethres_init[N_ETYPE];
-extern const double pethres[N_ETYPE];
+extern const int    MAX_N_HC;
+extern const int    MIN_CNT_CHANGE;
+extern const int    MAX_CNT_CHANGE;
+extern const double THRES_DIFF_EO;
+extern const double THRES_DIFF_REL;
 
 typedef double P_Error[N_ETYPE][N_WTYPE];
 
@@ -174,6 +176,11 @@ void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE],
  *  Interval classification (class_rel.c, class_unrel.c)
  *
  ********************************************************************************************/
+
+extern const int    OFFSET;
+extern const int    N_SIGMA_R;
+extern const double R_LOGP;
+extern const double E_PO_BASE;
 
 void classify_reliable(Rel_Intvl *rintvl, int M, Intvl *intvl, int N, int plen,
                        P_Error *perror, P_Error *cerror, int hcov, int dcov);
