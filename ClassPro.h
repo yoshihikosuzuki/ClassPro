@@ -7,12 +7,17 @@
  *
  ********************************************************************************************/
 
-#define DUP_PROFILE
-#undef PARALLEL_WRITE
-// #define NREAD_PWRITE 100
+#define DUP_PROFILE     // Create a distinct profile instance per thread  // TODO: clone
+#undef PARALLEL_WRITE   // Experimental mode of parallel write to .class file   // NOTE: currently unavailable for macOS
+// #define NREAD_PWRITE 100   // Number of reads per write in parallel-write mode
+#undef WRITE_TRACK   // Output DAZZ track of classifications as well
 
-#define DEBUG_SINGLE
-#define DEBUG_SINGLE_ID 55
+#undef DEBUG_SINGLE   // Single-read mode. No files are output
+#define DEBUG_SINGLE_ID 55   // Read ID in single-read mode
+// Never output DAZZ track in single-read mode
+#ifdef DEBUG_SINGLE
+#undef WRITE_TRACK
+#endif
 
 #define DEBUG
 #undef DEBUG_ITER
@@ -27,17 +32,10 @@
 #undef DEBUG_REL
 #undef DEBUG_UNREL
 #undef DEBUG_SLIP
-#undef DEBUG_MERGE
-
-#if defined(DEBUG_SINGLE) || defined(DEBU_SMALL)
-#define NO_WRITE
-#else
-#undef NO_WRITE
-#endif
 
 /*******************************************************************************************
  *
- *  SHARED HEADERS, CONSTANTS, SHARED ARGUMENT PARAMETERS, TYPES
+ *  HEADERS, TYPES, CONSTANTS
  *
  ********************************************************************************************/
 
@@ -53,24 +51,30 @@ KSEQ_INIT(gzFile, gzread)
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 
-extern const char *Usage;
-extern const int   DEFAULT_NTHREADS;
-extern const int   DEFAULT_RLEN;
-extern const char *DEFAULT_TMP_PATH;
-extern const int   MERGE_BUF_SIZE;   // for `merge_files`
-
-// Used during multi-thread classification
-extern bool  VERBOSE;
-extern int   READ_LEN;
-extern bool  IS_DB;
-extern bool  IS_DAM;
-
 enum State { ERROR, REPEAT, HAPLO, DIPLO, N_STATE };
 enum Ctype { HP, DS, TS, N_CTYPE };
 enum Etype { SELF, OTHERS, N_ETYPE };
 enum Wtype { DROP, GAIN, N_WTYPE };
 
-extern const char stoc[N_STATE];
+extern const char  stoc[N_STATE];
+extern const char  ctos[];
+extern const char *Usage;
+extern const int   DEFAULT_NTHREADS;
+extern const int   DEFAULT_RLEN;
+extern const char *DEFAULT_TMP_PATH;
+extern const int   MERGE_BUF_SIZE;
+extern const int   MAX_READ_LEN;
+
+/*******************************************************************************************
+ *
+ *  SHARED ARGUMENT PARAMETERS
+ *
+ ********************************************************************************************/
+
+extern bool  VERBOSE;
+extern int   READ_LEN;
+extern bool  IS_DB;
+extern bool  IS_DAM;
 
 /*******************************************************************************************
  *
@@ -191,7 +195,7 @@ typedef struct
     Error_Model   *emodel;   // Error models for low-complexity bases
     int            beg;      // Reads in [beg,end) are classified in this thread
     int            end;
-    gzFile         fxfp;     // FASTX file pointer                                         // TODO: change to void *Seq_Info
+    gzFile         fxfp;     // FASTX file pointer    // TODO: change to void *Seq_Info
     kseq_t        *fxseq;    // To fetch reads from FASTX
     DAZZ_DB       *db;       // To fetch nucleotide sequences from .db/.dam
     DAZZ_STUB     *stub;     // To fetch read names from .db
@@ -208,8 +212,8 @@ typedef struct
  ********************************************************************************************/
 
 // Supported extension names for input sequence files
-#define N_EXT 10
-extern const char *EXT[N_EXT];
+extern const int   N_EXT;
+extern const char *EXT[];
 
 // Output file types and their attributes
 enum Otype { CLASS, DATA, ANNO, N_OTYPE };

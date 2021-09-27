@@ -183,7 +183,7 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
       paramc[t].beg = t*arg->nparts;
       paramc[t].end = MIN((t+1)*arg->nparts,arg->nreads);
 
-#ifndef NO_WRITE
+#if !defined(DEBUG_SINGLE) && defined(WRITE_TRACK)
       paramc[t].afile = Fopen(paramm[ANNO].onames[t],"wb");
       paramc[t].dfile = Fopen(paramm[DATA].onames[t],"wb");
       if (paramc[t].afile == NULL || paramc[t].dfile == NULL)
@@ -193,7 +193,10 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
 #endif
     }
 
-#ifndef NO_WRITE
+#ifdef DEBUG_SINGLE
+  return;
+#endif
+
   // Set output file pointer to *.class file per thread
 #ifndef PARALLEL_WRITE
   for (int t = 0; t < arg->nthreads; t++)
@@ -233,7 +236,6 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
         { fprintf(stderr,"Cannot open .hdr file %s [errno=%d]\n",hdrs_name,errno);
           exit (1);
         }
-    
 
   // Total file size and write start position per thread
   csize = 0;
@@ -294,7 +296,7 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
           exit(1);
         }
     }
-#endif
+#endif   // PARALLEL_WRITE
 
   // Write header info to .anno.1
   { const int idx  = 0;
@@ -303,7 +305,6 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
     fwrite(&size,sizeof(int),1,paramc[0].afile);
     fwrite(&idx,sizeof(int64),1,paramc[0].afile);
   }
-#endif // NO_WRITE
 
   return;
 }
@@ -347,7 +348,10 @@ static void prepare_fx(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
       paramc[t].end = MIN((t+1)*arg->nparts,arg->nreads);
     }
 
-#ifndef NO_WRITE
+#ifdef DEBUG_SINGLE
+  return;
+#endif
+
   // Set output file pointer to *.class file per thread
 #ifndef PARALLEL_WRITE
   for (int t = 0; t < arg->nthreads; t++)
@@ -360,8 +364,7 @@ static void prepare_fx(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
 #else
   fprintf(stderr,"Parallel write for FASTX is currently unsupported.\n");
   exit(1);
-#endif
-#endif // NO_WRITE
+#endif   // PARALLEL_WRITE
 
   return;
 }

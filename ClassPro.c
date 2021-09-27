@@ -28,65 +28,62 @@ int  READ_LEN;
 bool IS_DB;
 bool IS_DAM;
 
-// TODO: define different function for each of DAZZ_DB and FASTX?
 static void *kmer_class_thread(void *arg)
-{ Class_Arg     *data   = (Class_Arg *)arg;
+{ // Shared parameters & constants
+  Class_Arg     *data   = (Class_Arg *)arg;
   Profile_Index *P      = data->P;
   Error_Model   *emodel = data->emodel;
   const int      K      = P->kmer;
   const int      Km1    = K-1;
 
-  // TODO: make a struct to store all variables for a single read
-  char        *seq;                   // Fetched sequence of the read
-  uint16      *profile, *nprofile;    // Fetched profile of a read
-  int          rlen, plen;            // `rlen` = `plen` + `Km1`
-  int          rlen_max;
-
-  Seq_Ctx     *ctx[N_WTYPE];          // Context lengths per position
-  Seq_Ctx     *lctx, *_lctx, *rctx;
-  P_Error     *perror, *cerror;       // Error probability per position
-
-  double      *eta;                   // Parameter for PMM
-
-  Error_Intvl *eintvl[N_ETYPE];
-  Intvl       *intvl;
-  Rel_Intvl   *rintvl;
-  int         *wall;                  // Wall positions
-  char        *asgn;                  // Interval classifications
-  int          N, M;                  // Number of walls/reliable intervals
-  char        *buf;
-
-  // fastx
-  kseq_t      *fxseq;
-
-  // db
-  DAZZ_DB     *db;
-  DAZZ_READ   *r;
-  char        *track, *crack;         // Data for dfile (crack = track + km1)
-
-#ifndef NO_WRITE
-  int64        idx;                   // Data for afile
-  char         header[MAX_NAME];
-  DAZZ_STUB   *stub;
-  char       **flist;
-  int         *findx;
-  int          map;
-  FILE        *hdrs;
-  char        *hdrs_name = "";   // dummy variable for `FGETS`
+#ifdef DEBUG_SINGLE
+  if (DEBUG_SINGLE_ID < data->beg+1 || data->end < DEBUG_SINGLE_ID)
+    goto class_exit;
 #endif
 
+  // Variables for classification
+  int            rlen_max, rlen, plen;   // `rlen` = `plen` + `Km1`
+  char          *seq = NULL;             // Fetched sequence of the read
+  uint16        *profile, *nprofile;     // Fetched profile of a read
+  // double        *eta;                    // Parameter for PMM
+  Seq_Ctx       *ctx[N_WTYPE], *lctx, *_lctx, *rctx;   // Context lengths per position
+  P_Error       *perror, *cerror;        // Error probability per position
+  int           *wall;                   // Wall positions
+  int            N, M;                   // Number of walls/reliable intervals
+  Intvl         *intvl;
+  Rel_Intvl     *rintvl;
+  Error_Intvl   *eintvl[N_ETYPE];
+  char          *rasgn, *pasgn;          // Classifications of intervals or k-mers for read and profile
+  // TODO: use 'EHDR' for `asgn`
+
+  // Variables for loading sequence/header
+  kseq_t        *fxseq = NULL;           // for FASTX input
+  DAZZ_DB       *db = NULL;
+  DAZZ_READ     *r = NULL;
+#ifdef WRITE_TRACK
+  int64          tidx;                   // Index for DAZZ track (afile; .anno file)
+  char          *track, *crack;          // Data for DAZZ track (dfile; .data file)
+#endif
+  char           header[MAX_NAME];       // for both FASTX and DB
+  DAZZ_STUB     *stub;
+  char         **flist = NULL;
+  int           *findx = NULL;
+  int            map;
+  FILE          *hdrs = NULL;
+  char          *hdrs_name = "";
+
+  // Input type-specific processing
   if (IS_DB)
     { db       = data->db;
       rlen_max = db->maxlen;
       seq      = New_Read_Buffer(db);
+#ifdef WRITE_TRACK
+      tidx     = 0;
       track    = New_Read_Buffer(db);
       crack    = track + Km1;
       for (int i = 0; i < Km1; i++)
         track[i] = 0;
-
-#ifndef NO_WRITE
-      idx = 0;
-
+#endif
       if (!IS_DAM)
         { stub  = data->stub;
           flist = stub->prolog;
@@ -95,40 +92,37 @@ static void *kmer_class_thread(void *arg)
           findx[-1] = 0;
         }
       else
-        { hdrs = data->hdrs;
-        }
-#endif
+        hdrs = data->hdrs;
     }
-  else
+  else   // FASTX
     { fxseq = data->fxseq;
       for (int i = 0; i < data->beg; i++)
         if (kseq_read(fxseq) < 0)
           { fprintf(stderr,"Cannot load %d-th read\n",i+1);
             exit(1);
           }
-      rlen_max = 50000;   // FIXME: auto computation
-      crack = Malloc(rlen_max*sizeof(char),"crack");
+      rlen_max = MAX_READ_LEN;
     }
 
-  // Prepare buffers etc.
-  { buf = Malloc((rlen_max+1)*sizeof(char),"buf");
+  // Allocation
+  { rasgn     = Malloc((rlen_max+1)*sizeof(char),"Classification array");
+    pasgn     = rasgn + Km1;
     for (int i = 0; i < Km1; i++)
-      buf[i] = 'N';
+      rasgn[i] = 'N';
 
     intvl    = Malloc(rlen_max*sizeof(Intvl),"Interval array");
     rintvl   = Malloc(rlen_max*sizeof(Rel_Intvl),"Reliable interval array");
     for (int i = SELF; i <= OTHERS; i++)
       eintvl[i] = Malloc(rlen_max*sizeof(Error_Intvl),"Error intvl array");
     wall     = Malloc(rlen_max*sizeof(int),"Wall array");
-    asgn     = Malloc(rlen_max*sizeof(char),"Interval assignment array");
     perror   = Malloc(rlen_max*sizeof(P_Error),"Error prob");
     cerror   = Malloc(rlen_max*sizeof(P_Error),"Error prob");
-    eta      = Malloc(rlen_max*2*sizeof(double),"PMM eta");
+    // eta      = Malloc(rlen_max*2*sizeof(double),"PMM eta");
     profile  = Malloc(rlen_max*sizeof(uint16),"Profile array");
     nprofile = Malloc(rlen_max*sizeof(uint16),"Normal profile array");
+
     _lctx    = Malloc(rlen_max*sizeof(Seq_Ctx),"Allocating left ctx vector");
     rctx     = Malloc(rlen_max*sizeof(Seq_Ctx),"Allocating right ctx vector");
-
     lctx     = _lctx + Km1 - 1;
     _lctx[0][HP] = 1;
     _lctx[0][DS] = _lctx[0][TS] = _lctx[1][TS] = 0;
@@ -136,11 +130,7 @@ static void *kmer_class_thread(void *arg)
     ctx[GAIN] = rctx;
   }
 
-#ifdef DEBUG_SINGLE
-  if (DEBUG_SINGLE_ID < data->beg+1 || data->end < DEBUG_SINGLE_ID)
-    goto class_exit;
-#endif
-
+  // For each read, do classification
   for (int id = data->beg; id < data->end; id++)
     { 
 #ifdef DEBUG_SINGLE
@@ -153,91 +143,94 @@ static void *kmer_class_thread(void *arg)
         goto class_exit;
 #endif
 
-      if (IS_DB)
-        { r = db->reads+id;
-          rlen = r->rlen;
-          Load_Read(db,id,seq,2);
-        }
-      else
-        { kseq_read(fxseq);
-          rlen = fxseq->seq.l;
-          seq = (char *)fxseq->seq.s;
-        }
+      // 1. Load sequence and header
+      { if (IS_DB)
+          { // sequence
+            r = db->reads+id;
+            rlen = r->rlen;
+            Load_Read(db,id,seq,2);
+
+            // header
+            if (!IS_DAM)
+              { while (id < findx[map-1])
+                  map -= 1;
+                while (id >= findx[map])
+                  map += 1;
+                sprintf(header,"@%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
+              }
+            else
+              { FSEEKO(hdrs,r->coff,SEEK_SET)
+                FGETS(header,MAX_NAME,hdrs)
+                header[strlen(header)-1] = '\0';
+                header[0] = '@';
+              }
+          }
+        else   // FASTX
+          { // sequence
+            kseq_read(fxseq);
+            rlen = fxseq->seq.l;
+            seq = (char *)fxseq->seq.s;
+            if (rlen > MAX_READ_LEN)   // TODO: realloc when exceeded
+              { fprintf(stderr,"rlen (%d) > MAX_READ_LEN for FASTX inputs (%d)\n",rlen,MAX_READ_LEN);
+                exit(1);
+              }
+
+            // header
+            sprintf(header,"@%s %s",fxseq->name.s,fxseq->comment.s);
+          }
 
 #if defined(DEBUG) || defined(DEBUG_CTX) || defined(DEBUG_ERROR) || defined(DEBUG_ITER)
-      fprintf(stderr,"\nRead %d (%d bp): ",id+1,rlen);
-      fflush(stderr);
+        fprintf(stderr,"\nRead %d (%d bp): ",id+1,rlen);
+        fflush(stderr);
 #endif
 
 #ifdef DEBUG
-      const int slen = strlen(seq);
-      if (rlen != slen)
-        { fprintf(stderr,"rlen (%d) != strlen(seq) (%d)\n",rlen,slen);
-          exit(1);
-        }
-      if (rlen > rlen_max)
-        { fprintf(stderr,"rlen (%d) > rlen_max (%d)\n",rlen,rlen_max);
-          exit(1);
-        }
-#endif
-
-      calc_seq_context(_lctx,rctx,seq,rlen);
-
-      plen = Fetch_Profile(P,(int64)id,rlen_max,profile);
-
-      for (int i = 0; i < plen; i++)
-        if (profile[i] > 32767)
-          { fprintf(stderr,"Read %d i=%d cnt=%d\n",id,i,profile[i]);
-            fflush(stderr);
+        const int slen = strlen(seq);
+        if (rlen != slen)
+          { fprintf(stderr,"rlen (%d) != strlen(seq) (%d)\n",rlen,slen);
             exit(1);
           }
-      // continue;
-
-      if (rlen <= Km1)
-        {
-#ifndef NO_WRITE
-          if (IS_DB)
-            { if (!IS_DAM)
-                { while (id < findx[map-1])
-                    map -= 1;
-                  while (id >= findx[map])
-                    map += 1;
-                  sprintf(header,"@%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
-                }
-              else
-                { FSEEKO(hdrs,r->coff,SEEK_SET)
-                  FGETS(header,MAX_NAME,hdrs)
-                  header[strlen(header)-1] = '\0';
-                  header[0] = '@';
-                }
-            }
-          else
-            { sprintf(header,"@%s %s",fxseq->name.s,fxseq->comment.s);
-            }
-
-          buf[rlen] = '\0';
-          fprintf(data->cfile,"%s\n%s\n+\n%s\n",header,seq,buf);
-          buf[rlen] = 'N';
-
-          if (IS_DB)
-            { // Output binary to DAZZ track
-              Compress_Read(rlen,track);
-              int t = COMPRESSED_LEN(rlen);
-              fwrite(track,1,t,data->dfile);
-              idx += t;
-              fwrite(&idx,sizeof(int64),1,data->afile);
-            }
+        if (rlen > rlen_max)
+          { fprintf(stderr,"rlen (%d) > rlen_max (%d)\n",rlen,rlen_max);
+            exit(1);
+          }
 #endif
-          continue;
-        }
 
+        // Special case where the read is too short
+        if (rlen <= Km1)
+          {
+#ifdef DEBUG_SINGLE
+            fprintf(stderr,"rlen (%d) <= K-1 (%d)\n",rlen,Km1);
+            continue;
+#endif
+
+            fprintf(data->cfile,"%s\n%s\n+\n%*s\n",header,seq,rlen,rasgn);
+#ifdef WRITE_TRACK
+            if (IS_DB)
+              { Compress_Read(rlen,track);
+                int t = COMPRESSED_LEN(rlen);
+                fwrite(track,1,t,data->dfile);
+                tidx += t;
+                fwrite(&tidx,sizeof(int64),1,data->afile);
+              }
+#endif
+            continue;
+          }
+      }
+
+      // 2. Compute per-base sequence context
+      calc_seq_context(_lctx,rctx,seq,rlen);
+
+      // 3. Load count profile
+      plen = Fetch_Profile(P,(int64)id,rlen_max,profile);
       if (rlen != plen+Km1)
         { fprintf(stderr,"Read %d: rlen (%d) != plen+Km1 (%d)\n",id+1,rlen,plen+Km1);
           exit(1);
         }
 
-      find_wall(profile,plen,ctx,emodel,perror,cerror,eintvl,intvl,rintvl,wall,asgn,K,&N,&M);
-
+      // 4. Wall detection
+      // TODO: use 'EHDR' for `pasgn`
+      find_wall(profile,plen,ctx,emodel,perror,cerror,eintvl,intvl,rintvl,wall,pasgn,K,&N,&M);
 #ifdef DEBUG_ITER
       int rtot = 0;
       for (int i = 0; i < M; i++)
@@ -245,81 +238,59 @@ static void *kmer_class_thread(void *arg)
       fprintf(stderr,"%d (/%d; %d %%) rel intvls",M,N,(int)(100.*rtot/plen));
 #endif
 
-      /*int nnorm = pmm_vi(profile,nprofile,plen,eta,lambda);
-
-#ifdef DEBUG_ITER
-      fprintf(stderr,", (H,D)=(%.lf,%.lf) (%d %% normal)",lambda[0],lambda[1],(int)(100.*nnorm/plen));
-#endif*/
+      // Local coverage estimation via Poisson mixture model (obsolete)
+//       int nnorm = pmm_vi(profile,nprofile,plen,eta,lambda);
+// #ifdef DEBUG_ITER
+//       fprintf(stderr,", (H,D)=(%.lf,%.lf) (%d %% normal)",lambda[0],lambda[1],(int)(100.*nnorm/plen));
+// #endif
 
 #ifdef DEBUG_ITER
       fprintf(stderr,",\n");
       fflush(stderr);
 #endif
 
-      classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,lambda_prior[0],lambda_prior[1]);
-      classify_unreliable(profile,plen,intvl,N,perror,lambda_prior[0],lambda_prior[1]);
-
-      for (int i = 0; i < N; i++)
-        for (int j = intvl[i].i; j < intvl[i].j; j++)
-          crack[j] = intvl[i].asgn;
-
-      remove_slip(profile,plen,ctx,crack);
-
-#ifndef NO_WRITE
-      if (IS_DB)
-        { if (!IS_DAM)
-            { while (id < findx[map-1])
-                map -= 1;
-              while (id >= findx[map])
-                map += 1;
-              sprintf(header,"@%s/%d/%d_%d",flist[map],r->origin,r->fpulse,r->fpulse+r->rlen);
-            }
-          else
-            { FSEEKO(hdrs,r->coff,SEEK_SET)
-              FGETS(header,MAX_NAME,hdrs)
-              header[strlen(header)-1] = '\0';
-              header[0] = '@';
-            }
-        }
-      else
-        { sprintf(header,"@%s %s",fxseq->name.s,fxseq->comment.s);
-        }
-
-      int bufidx = Km1;
-      for (int i = 0; i < plen; i++)
-        buf[bufidx++] = stoc[(unsigned char)crack[i]];
-      buf[bufidx] = '\0';
-
-      fprintf(data->cfile,"%s\n%s\n+\n%s\n",header,seq,buf);
-
-      if (IS_DB)
-        { // Output binary to DAZZ track
-          Compress_Read(rlen,track);
-          int t = COMPRESSED_LEN(rlen);
-          fwrite(track,1,t,data->dfile);
-          idx += t;
-          fwrite(&idx,sizeof(int64),1,data->afile);
-        }
-#endif
-    }
-
-#if !defined(NO_WRITE) && defined(DEBUG_MERGE)
-      fprintf(stderr,"last idx=%lld @thread %d\n",idx,data->wch);
-      fflush(stderr);
-#endif
+      // 5. Classification of reliable intervals and then the rest
+      // TODO: use 'EHDR' for `asgn`
+      { classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,lambda_prior[0],lambda_prior[1]);
+        classify_unreliable(profile,plen,intvl,N,perror,lambda_prior[0],lambda_prior[1]);
+        for (int i = 0; i < N; i++)
+          { Intvl I = intvl[i];
+            for (int j = I.i; j < I.j; j++)
+              pasgn[j] = I.asgn;
+          }
+        rasgn[rlen] = '\0';
+        // remove_slip(profile,plen,ctx,crack);   // TODO: change to `pasgn`
+      }
 
 #ifdef DEBUG_SINGLE
-class_exit:
+      continue;
 #endif
 
-#ifndef NO_WRITE
+      // 6. Output to .class file (and optionally DAZZ track)
+      { fprintf(data->cfile,"%s\n%s\n+\n%s\n",header,seq,rasgn);
+#ifdef WRITE_TRACK
+        if (IS_DB)
+          { for (int i = 0; i < plen; i++)
+              crack[i] = ctos[(int)pasgn[i]];
+            Compress_Read(rlen,track);
+            int t = COMPRESSED_LEN(rlen);
+            fwrite(track,1,t,data->dfile);
+            tidx += t;
+            fwrite(&tidx,sizeof(int64),1,data->afile);
+          }
+#endif
+      }
+    }   // Loop for each read
+
   fclose(data->cfile);
   if (IS_DB)
-    { fclose(data->afile);
+    { free(seq-1);
+#ifdef WRITE_TRACK
+      fclose(data->afile);
       fclose(data->dfile);
-    }
+      free(track-1);
 #endif
-
+    }
   free(profile);
   free(nprofile);
   free(_lctx);
@@ -331,14 +302,12 @@ class_exit:
   free(intvl);
   free(rintvl);
   free(wall);
-  free(asgn);
-  free(eta);
-  free(buf);
+  free(rasgn);
+  // free(eta);
 
-  if (IS_DB)
-    { free(track-1);
-      free(seq-1);
-    }
+#ifdef DEBUG_SINGLE
+class_exit:
+#endif
 
   return (NULL);
 }
@@ -501,58 +470,70 @@ static void free_arg(Arg *arg)
 }
 
 int main(int argc, char *argv[])
-{ Arg           *arg     = parse_arg(argc,argv);;
-  Class_Arg     *paramc  = Malloc(sizeof(Class_Arg)*arg->nthreads,"Allocating class args");;
-  Merge_Arg     *paramm  = Malloc(sizeof(Merge_Arg)*N_OTYPE,"Allocate merge args");;
-  THREAD        *threads = Malloc(sizeof(THREAD)*arg->nthreads,"Allocating class threads");
-  
-  VERBOSE  = arg->verbose;
-  READ_LEN = arg->rlen;
-  
+{ Arg           *arg;
+  Class_Arg     *paramc;
+  Merge_Arg     *paramm;
+  THREAD        *threads;
   Profile_Index *P;
   Error_Model   *emodel;
 
-  // Precompute etc.
-  { if ((P = Open_Profiles(arg->fk_root)) == NULL)
+  // Parse command-line arguments and allocate parameter objects
+  { arg      = parse_arg(argc,argv);
+    VERBOSE  = arg->verbose;
+    READ_LEN = arg->rlen;
+
+    paramc   = Malloc(sizeof(Class_Arg)*arg->nthreads,"Allocating class args");
+    paramm   = Malloc(sizeof(Merge_Arg)*N_OTYPE,"Allocate merge args");
+    threads  = Malloc(sizeof(THREAD)*arg->nthreads,"Allocating class threads");
+  }
+  
+  // Precompute several values
+  { // 1. Number of reads processed per thread
+    if ((P = Open_Profiles(arg->fk_root)) == NULL)
       { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,arg->fk_root);
         exit (1);
       }
     arg->nreads = P->nreads;
     arg->nparts = (arg->nreads / arg->nthreads) + (arg->nreads % arg->nthreads == 0 ? 0 : 1);
-
     if (arg->verbose)
       { fprintf(stderr,"    Total # of reads      = %d\n",arg->nreads);
         fprintf(stderr,"    # of reads per thread = %d\n",arg->nparts);
       }
 
+    // 2. Constants for probability calculation
     precompute_logfact();
-    precompute_digamma();
+
+    // 3. Constants for Poisson mixture model
+    // precompute_digamma();
+
+    // 4. Global Haploid/Diploid coverages
     process_global_hist(arg->fk_root,arg->cov);
+
+    // 5. Thresholds of a count change due to errors in self and errors in others
+    //    Context-specific sequcning error model is also loaded
     emodel = calc_init_thres();
   }
 
-  // Set file names, file pointers, etc. for each thread
+  // Set error model, profile reader, and output file names/pointers for each thread
   { for (int t = 0; t < arg->nthreads; t++)
       { paramc[t].emodel = emodel;
-
-#ifndef DUP_PROFILE
-        paramc[t].P = (t == 0) ? P : Clone_Profiles(P);
-#else
+#ifdef DUP_PROFILE
         paramc[t].P = (t == 0) ? P : Open_Profiles(arg->fk_root);
+#else
+        paramc[t].P = (t == 0) ? P : Clone_Profiles(P);
 #endif
         if (paramc[t].P == NULL)
           { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,arg->fk_root);
             exit (1);
           }
       }
-
     prepare_param(arg,paramc,paramm);
   }
 
-  // Classification
+  // Main classification routine
   { if (arg->verbose)
       fprintf(stderr,"Classifying %d-mers%s...\n",P->kmer,arg->find_seeds ? " & Finding seeds" : "");
-
+    
     for (int t = 1; t < arg->nthreads; t++)
       pthread_create(threads+t,NULL,kmer_class_thread,paramc+t);
     kmer_class_thread(paramc);
@@ -560,13 +541,16 @@ int main(int argc, char *argv[])
       pthread_join(threads[t],NULL);
   }
 
-#ifndef NO_WRITE
-  // Merging intermediate files into final output
+#ifdef DEBUG_SINGLE
+  return 0;
+#endif
+
+  // Merging intermediate files into final output .class file
   { int i;
 #ifndef PARALLEL_WRITE
     const int b = CLASS;
 #else
-    const int b = CLASS+1;
+    const int b = CLASS+1;   // Skip .class file because already merged
 #endif
     const int e = (arg->is_db) ? N_OTYPE : CLASS+1;
 
@@ -588,7 +572,6 @@ int main(int argc, char *argv[])
     for (i = 0; i+1 < arg->nthreads && b+i < e-1; i++)
       pthread_join(threads[i+1],NULL);
   }
-#endif
 
   // Epilogue
   { free(threads);
