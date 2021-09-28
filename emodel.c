@@ -18,7 +18,7 @@ Error_Model *calc_init_thres()
 
   CMAX = GLOBAL_COV[REPEAT];
   if (CMAX > 255)
-    { fprintf(stderr,"Too large coverage\n");
+    { fprintf(stderr,"Too high coverage\n");
       exit(1);
     }
 
@@ -35,8 +35,8 @@ Error_Model *calc_init_thres()
 
       emodel[t].cthres = Malloc(sizeof(uint8***)*(emodel[t].lmax+1),"Allocating cthres");
       for (int l = 1; l <= emodel[t].lmax; l++)
-        { emodel[t].cthres[l] = Malloc(sizeof(uint8**)*(CMAX+1),"Allocating cthres l");
-          for (int c = 1; c <= CMAX; c++)
+        { emodel[t].cthres[l] = Malloc(sizeof(uint8**)*CMAX,"Allocating cthres l");
+          for (int c = 1; c < CMAX; c++)
             { emodel[t].cthres[l][c] = Malloc(sizeof(uint8*)*N_THRES,"Allocating cthres pe");
               for (int s = INIT; s <= FINAL; s++)
                 emodel[t].cthres[l][c][s] = Malloc(sizeof(uint8)*N_ETYPE,"Allocating cthres thres");
@@ -44,10 +44,10 @@ Error_Model *calc_init_thres()
         }
     }
 
-#ifdef DEBUG_BINOM
+#ifdef DEBUG_EMODEL
   fprintf(stderr,"Thresholds for initial wall filtering (cmax = %d):\n",CMAX);
-  fprintf(stderr,"          cout  :");
-  for (cout = 1; cout <= CMAX; cout++)
+  fprintf(stderr,"          cout       :");
+  for (cout = 1; cout < CMAX; cout++)
     fprintf(stderr," %3d",cout);
   fprintf(stderr,"\n  ( t, l, pe)\n");
 #endif
@@ -58,11 +58,11 @@ Error_Model *calc_init_thres()
         lpe = log(pe);
         l1mpe = log(1-pe);
 
-#ifdef DEBUG_BINOM
-      fprintf(stderr,"  (%2d,%2d, %lf)\n",t,l,pe);
+#ifdef DEBUG_EMODEL
+      fprintf(stderr,"  (%2d,%2d, %.3lf)\n",t,l,pe);
 #endif
 
-        for (cout = 1; cout <= CMAX; cout++)
+        for (cout = 1; cout < CMAX; cout++)
           { // initialize
             ct[SELF] = cout;
             ct[OTHERS] = 0;
@@ -89,18 +89,18 @@ Error_Model *calc_init_thres()
               }
           }
 
-#ifdef DEBUG_BINOM
-        fprintf(stderr,"          cin(S_init):");
-        for (cout = 1; cout <= CMAX; cout++)
+#ifdef DEBUG_EMODEL
+        fprintf(stderr,"          cin(S_init ):");
+        for (cout = 1; cout < CMAX; cout++)
           fprintf(stderr," %3d",emodel[t].cthres[l][cout][INIT][SELF]);
         fprintf(stderr,"\n          cin(S_final):");
-        for (cout = 1; cout <= CMAX; cout++)
+        for (cout = 1; cout < CMAX; cout++)
           fprintf(stderr," %3d",emodel[t].cthres[l][cout][FINAL][SELF]);
-        fprintf(stderr,"\n          cin(O_init):");
-        for (cout = 1; cout <= CMAX; cout++)
+        fprintf(stderr,"\n          cin(O_init ):");
+        for (cout = 1; cout < CMAX; cout++)
           fprintf(stderr," %3d",emodel[t].cthres[l][cout][INIT][OTHERS]);
         fprintf(stderr,"\n          cin(O_final):");
-        for (cout = 1; cout <= CMAX; cout++)
+        for (cout = 1; cout < CMAX; cout++)
           fprintf(stderr," %3d",emodel[t].cthres[l][cout][FINAL][OTHERS]);
         fprintf(stderr,"\n");
         fflush(stderr);
@@ -114,7 +114,7 @@ void free_emodel(Error_Model *emodel)
 { for (int t = HP; t <= TS; t++)
     { free(emodel[t].pe);
       for (int l = 1; l <= emodel[t].lmax; l++)
-        { for (int c = 1; c <= CMAX; c++)
+        { for (int c = 1; c < CMAX; c++)
             { for (int s = INIT; s <= FINAL; s++)
                 free(emodel[t].cthres[l][c][s]);
               free(emodel[t].cthres[l][c]);

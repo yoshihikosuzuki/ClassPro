@@ -23,6 +23,7 @@
 #define DEBUG
 #define DEBUG_ITER
 #undef DEBUG_BINOM
+#define DEBUG_EMODEL
 #undef DEBUG_CTX
 #undef DEBUG_ERROR
 #undef DEBUG_INTVL
@@ -113,12 +114,13 @@ enum ThresT { INIT, FINAL, N_THRES };
 
 extern const int    MAX_N_LC;
 extern const double PE_THRES[N_THRES][N_ETYPE];
-extern int          CMAX;
+
+extern int CMAX;   // Max cout for precomputation of count thresholds
 
 typedef struct
   { uint8      lmax;   // Maximum feature length considered
     double    *pe;         // Error probability given feature length
-    uint8  ****cthres;     // Threshold of count change
+    uint8  ****cthres;     // Threshold of count change; emodel[ctype].cthres[l][cout][thresT][etype] = cin threshold  // TODO: better order?
   } Error_Model;
 
 Error_Model *calc_init_thres();
@@ -202,6 +204,7 @@ typedef struct
     Error_Model   *emodel;   // Error models for low-complexity bases
     int            beg;      // Reads in [beg,end) are classified in this thread
     int            end;
+    // Below are for IO
     gzFile         fxfp;     // FASTX file pointer    // TODO: change to void *Seq_Info
     kseq_t        *fxseq;    // To fetch reads from FASTX
     DAZZ_DB       *db;       // To fetch nucleotide sequences from .db/.dam

@@ -51,7 +51,7 @@ static void check_drop(int i, const uint16 *profile, int plen, Seq_Ctx *ctx[2], 
         { max_p[0] = ps;
           max_j[0] = j;
         }
-      if (logp_d > THRES_LOGP_DIFF && max_p[1] < po)
+      if (logp_d > THRES_DIFF_EO && max_p[1] < po)
         { max_p[1] = po;
           max_j[1] = j;
         }
@@ -61,11 +61,11 @@ static void check_drop(int i, const uint16 *profile, int plen, Seq_Ctx *ctx[2], 
 #ifdef DEBUG_ERROR
       fprintf(stderr,"  @ j = %d (m = %d, n = %d): %d -> %d\n",j,m,n,profile[j-1],profile[j]);
       fprintf(stderr,"    Ps (= %lf * %lf * %lf) = %lf",perror[i][SELF][DROP],perror[j][SELF][GAIN],pe,ps);
-      if (ps > pethres[SELF])
+      if (ps > PE_THRES[FINAL][SELF])
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
       fprintf(stderr,"    Po (= %lf * %lf * %lf) = %lf (LPd = %lf)",perror[i][OTHERS][DROP],perror[j][OTHERS][GAIN],pe,po,logp_d);
-      if (logp_d > THRES_LOGP_DIFF && po > pethres[OTHERS])
+      if (logp_d > THRES_DIFF_EO && po > PE_THRES[FINAL][OTHERS])
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
 #endif
@@ -123,11 +123,11 @@ static void check_drop(int i, const uint16 *profile, int plen, Seq_Ctx *ctx[2], 
 #ifdef DEBUG_ERROR
       fprintf(stderr,"  @ j = %d (t = %d, m = %d, n = %d): %d -> %d\n",j,t,m,n,profile[j-1],profile[j]);
       fprintf(stderr,"    Ps (= %lf * %lf) = %lf",perror[i][SELF][DROP],perror[j][SELF][GAIN],ps);
-      if (ps > pethres[SELF])
+      if (ps > PE_THRES[FINAL][SELF])
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
       fprintf(stderr,"    Po (= %lf * %lf) = %lf (LPd = %lf)",perror[i][OTHERS][DROP],perror[j][OTHERS][GAIN],po,logp_d);
-      if (logp_d > THRES_LOGP_DIFF && po > pethres[OTHERS])
+      if (logp_d > THRES_DIFF_EO && po > PE_THRES[FINAL][OTHERS])
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
 #endif
@@ -137,7 +137,7 @@ static void check_drop(int i, const uint16 *profile, int plen, Seq_Ctx *ctx[2], 
         { max_p[0] = ps;
           max_j[0] = j;
         }
-      if (logp_d > THRES_LOGP_DIFF && max_p[1] < po)
+      if (logp_d > THRES_DIFF_EO && max_p[1] < po)
         { max_p[1] = po;
           max_j[1] = j;
         }
@@ -190,7 +190,7 @@ static void check_gain(int i, const uint16 *profile, Seq_Ctx *ctx[2], Error_Mode
         { max_p[0] = ps;
           max_j[0] = j;
         }
-      if (logp_d > THRES_LOGP_DIFF && max_p[1] < po)
+      if (logp_d > THRES_DIFF_EO && max_p[1] < po)
         { max_p[1] = po;
           max_j[1] = j;
         }
@@ -198,11 +198,11 @@ static void check_gain(int i, const uint16 *profile, Seq_Ctx *ctx[2], Error_Mode
 #ifdef DEBUG_ERROR
       fprintf(stderr,"  @ j = %d (m = %d, n = %d): %d -> %d\n",j,m,n,profile[j-1],profile[j]);
       fprintf(stderr,"    Ps (= %lf * %lf * %lf) = %lf",perror[j][SELF][DROP],perror[i][SELF][GAIN],pe,ps);
-      if (ps > pethres[SELF])
+      if (ps > PE_THRES[FINAL][SELF])
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
       fprintf(stderr,"    Po (= %lf * %lf * %lf) = %lf (LPd = %lf)",perror[j][OTHERS][DROP],perror[i][OTHERS][GAIN],pe,po,logp_d);
-      if (logp_d > THRES_LOGP_DIFF && po > pethres[OTHERS])
+      if (logp_d > THRES_DIFF_EO && po > PE_THRES[FINAL][OTHERS])
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
 #endif
@@ -260,11 +260,11 @@ static void check_gain(int i, const uint16 *profile, Seq_Ctx *ctx[2], Error_Mode
 #ifdef DEBUG_ERROR
       fprintf(stderr,"  @ j = %d (t = %d, m = %d, n = %d): %d -> %d\n",j,t,m,n,profile[j-1],profile[j]);
       fprintf(stderr,"    Ps (= %lf * %lf) = %lf",perror[j][SELF][DROP],perror[i][SELF][GAIN],ps);
-      if (ps > pethres[SELF])
+      if (ps > PE_THRES[FINAL][SELF])
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
       fprintf(stderr,"    Po (= %lf * %lf) = %lf (LPd = %lf)",perror[j][OTHERS][DROP],perror[i][OTHERS][GAIN],po,logp_d);
-      if (logp_d > THRES_LOGP_DIFF && po > pethres[OTHERS])
+      if (logp_d > THRES_DIFF_EO && po > PE_THRES[FINAL][OTHERS])
         fprintf(stderr," ***");
       fprintf(stderr,"\n");
 #endif
@@ -274,7 +274,7 @@ static void check_gain(int i, const uint16 *profile, Seq_Ctx *ctx[2], Error_Mode
         { max_p[0] = ps;
           max_j[0] = j;
         }
-      if (logp_d > THRES_LOGP_DIFF && max_p[1] < po)
+      if (logp_d > THRES_DIFF_EO && max_p[1] < po)
         { max_p[1] = po;
           max_j[1] = j;
         }
@@ -390,7 +390,7 @@ void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mod
         is_wall = 0;
       else if (cng > MAX_CNT_CHANGE)
         is_wall = 1;
-      else if (cout <= CMAX && cin < MAX(emodel[maxt].cthres[maxl][cout][SELF],emodel[maxt].cthres[maxl][cout][OTHERS]))
+      else if (cout < CMAX && cin < MAX(emodel[maxt].cthres[maxl][cout][INIT][SELF],emodel[maxt].cthres[maxl][cout][INIT][OTHERS]))
         is_wall = 1;
       if (MIN(profile[i-1],profile[i]) >= THRES_R)
         is_wall = 0;
@@ -427,7 +427,7 @@ void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mod
       fprintf(stderr,"\n");
 #endif
 
-      if (perror[i][SELF][w] > pethres_init[SELF] || perror[i][OTHERS][w] < pethres_init[OTHERS])   // TODO: need this? init_thres are used in the count threshold precompute
+      if (perror[i][SELF][w] > PE_THRES[INIT][SELF] || perror[i][OTHERS][w] < PE_THRES[INIT][OTHERS])   // TODO: need this? init_thres are used in the count threshold precompute
         { // asgn[i] = 1;
 
           if (w == DROP)
@@ -496,7 +496,7 @@ void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mod
   for (int i = 0; i < eidx; i++)
     { for (int e = SELF; e <= OTHERS; e++)
         { double _pe = eintvl[e][i].pe;
-          if (_pe < pethres[e])
+          if (_pe < PE_THRES[FINAL][e])
             continue;
           
           int beg = eintvl[e][i].i;
@@ -522,20 +522,20 @@ void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mod
   // Exclude walls that can be explained by errors in others
   e = OTHERS;
   for (int i = 0; i < eidx; i++)
-    if (eintvl[e][i].pe >= pethres[e])
+    if (eintvl[e][i].pe >= PE_THRES[FINAL][e])
       asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 0;
   // Include walls that can be explained by errors in self
   // e = SELF;
   // for (int i = 0; i < eidx; i++)
   //   if (eintvl[e][i].pe >= pethres[e])
   //     asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 1;
-  
+
   // Concatenate adjacent error intervals
   bool is_error[plen];
   for (int i = 0; i < plen; i++)
     is_error[i] = false;
   for (int i = 0; i < eidx; i++)
-    if (eintvl[SELF][i].pe >= pethres[SELF])
+    if (eintvl[SELF][i].pe >= PE_THRES[FINAL][SELF])
       { //fprintf(stderr,"Eintvl[%d] = (%d,%d)\n",i,eintvl[SELF][i].i,eintvl[SELF][i].j);
         for (int j = eintvl[SELF][i].i; j < eintvl[SELF][i].j; j++)
           is_error[j] = true;
@@ -577,7 +577,7 @@ void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Mod
     asgn[wall[i]] = 0;
   e = SELF;
   for (int i = 0; i < eidx; i++)
-    if (eintvl[e][i].pe >= pethres[e])
+    if (eintvl[e][i].pe >= PE_THRES[FINAL][e])
       for (int j = eintvl[e][i].i; j < eintvl[e][i].j; j++)
         asgn[j] = 1;
   

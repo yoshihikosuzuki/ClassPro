@@ -11,14 +11,14 @@
 #include <sys/stat.h>
 
 #include "ClassPro.h"
-#include "prob.h"
-#include "util.h"
 
 #include "const.c"
 #include "io.c"
+#include "util.c"
+#include "prob.c"
 #include "hist.c"
-#include "context.c"
 #include "emodel.c"
+#include "context.c"
 #include "wall.c"
 #include "class_rel.c"
 #include "class_unrel.c"
@@ -58,7 +58,6 @@ static void *kmer_class_thread(void *arg)
   Rel_Intvl     *rintvl;
   Error_Intvl   *eintvl[N_ETYPE];
   char          *rasgn, *pasgn;          // Classifications of intervals or k-mers for read and profile
-  // TODO: use 'EHDR' for `asgn`
 
   // Variables for loading sequence/header
   kseq_t        *fxseq = NULL;           // for FASTX input

@@ -8,7 +8,7 @@
 
 #include "ClassPro.h"
 
-static const int    N_SIGMA_R = 3;
+// static const int    N_SIGMA_R = 3;
 static const int    N_SIGMA_FLUC = 1;
 static double       DR_RATIO_R;
 static const double THRES_LOGP_FLUC = log(0.001);   // TODO: make `p_skellam` and use p?

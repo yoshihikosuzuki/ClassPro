@@ -1,6 +1,3 @@
-#ifndef _UTIL_H
-#define _UTIL_H
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -16,5 +13,3 @@ static inline int plus_sigma(int cnt, int n_sigma)
 static inline int minus_sigma(int cnt, int n_sigma)
 { return cnt - (int)(n_sigma * sqrt(cnt));
 }
-
-#endif // _UTIL_H
