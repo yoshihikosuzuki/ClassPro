@@ -10,7 +10,7 @@ We also provide a tool for interactive visualization of read profiles (plus k-me
 
 ``` bash
 $ git clone https://github.com/yoshihikosuzuki/ClassPro
-$ make
+$ cd ClassPro; make
 ```
 
 ## How to run
