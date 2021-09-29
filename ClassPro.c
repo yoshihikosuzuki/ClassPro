@@ -14,20 +14,19 @@
 
 #include "const.c"
 #include "io.c"
-#include "util.c"
 #include "prob.c"
+#include "util.c"
 #include "hist.c"
-#include "emodel.c"
 #include "context.c"
 #include "wall.c"
 #include "class_rel.c"
 #include "class_unrel.c"
 
-bool VERBOSE;
-int  READ_LEN;
-bool IS_DB;
-bool IS_DAM;
-int  GLOBAL_COV[N_STATE];
+bool  VERBOSE;
+int   READ_LEN;
+bool  IS_DB;
+bool  IS_DAM;
+cnt_t GLOBAL_COV[N_STATE];
 
 static void *kmer_class_thread(void *arg)
 { // Shared parameters & constants
@@ -45,19 +44,16 @@ static void *kmer_class_thread(void *arg)
   // Variables for classification
   int            rlen_max, rlen, plen;   // `rlen` = `plen` + `Km1`
   char          *seq = NULL;             // Fetched sequence of the read
-  uint16        *profile;                // Fetched profile of a read
-#ifdef DO_PMM
-  uint16        *nprofile;               // Normal counts for PMM
-  double        *eta;                    // Parameter for PMM
-#endif
+  cnt_t         *profile;                // Fetched profile of a read
   Seq_Ctx       *ctx[N_WTYPE], *lctx, *_lctx, *rctx;   // Context lengths per position
-  P_Error       *perror, *cerror;        // Error probability per position
-  int           *wall;                   // Wall positions
   int            N, M;                   // Number of walls/reliable intervals
-  Intvl         *intvl;
-  Rel_Intvl     *rintvl;
-  Error_Intvl   *eintvl[N_ETYPE];
+  Intvl         *intvl, *rintvl;
   char          *rasgn, *pasgn;          // Classifications of intervals or k-mers for read and profile
+  Wall_Arg      *warg;
+  Rel_Arg       *rel_arg;
+#ifdef DO_PMM
+  PMM_Arg       *parg;
+#endif
 
   // Variables for loading sequence/header
   kseq_t        *fxseq = NULL;           // for FASTX input
@@ -108,27 +104,24 @@ static void *kmer_class_thread(void *arg)
     }
 
   // Allocation
-  { rasgn     = Malloc((rlen_max+1)*sizeof(char),"Classification array");
-    pasgn     = rasgn + Km1;
+  { rasgn = Malloc((rlen_max+1)*sizeof(char),"Classification array");
+    pasgn = rasgn + Km1;
     for (int i = 0; i < Km1; i++)
       rasgn[i] = 'N';
 
-    intvl    = Malloc(rlen_max*sizeof(Intvl),"Interval array");
-    rintvl   = Malloc(rlen_max*sizeof(Rel_Intvl),"Reliable interval array");
-    for (int i = SELF; i <= OTHERS; i++)
-      eintvl[i] = Malloc(rlen_max*sizeof(Error_Intvl),"Error intvl array");
-    wall     = Malloc(rlen_max*sizeof(int),"Wall array");
-    perror   = Malloc(rlen_max*sizeof(P_Error),"Error prob");
-    cerror   = Malloc(rlen_max*sizeof(P_Error),"Error prob");
-    profile  = Malloc(rlen_max*sizeof(uint16),"Profile array");
+    rel_arg = alloc_rel_arg(rlen_max);
+    warg = alloc_wall_arg(rlen_max);
 #ifdef DO_PMM
-    nprofile = Malloc(rlen_max*sizeof(uint16),"Normal profile array");
-    eta      = Malloc(rlen_max*2*sizeof(double),"PMM eta");
+    parg = alloc_pmm_arg(rlen_max);
 #endif
 
-    _lctx    = Malloc(rlen_max*sizeof(Seq_Ctx),"Allocating left ctx vector");
-    rctx     = Malloc(rlen_max*sizeof(Seq_Ctx),"Allocating right ctx vector");
-    lctx     = _lctx + Km1 - 1;
+    intvl   = Malloc(rlen_max*sizeof(Intvl),"Interval array");
+    rintvl  = Malloc(rlen_max*sizeof(Intvl),"Interval array");
+    profile = Malloc(rlen_max*sizeof(cnt_t),"Profile array");
+
+    _lctx   = Malloc(rlen_max*sizeof(Seq_Ctx),"Allocating left ctx vector");
+    rctx    = Malloc(rlen_max*sizeof(Seq_Ctx),"Allocating right ctx vector");
+    lctx    = _lctx + Km1 - 1;
     _lctx[0][HP] = 1;
     _lctx[0][DS] = _lctx[0][TS] = _lctx[1][TS] = 0;
     ctx[DROP] = lctx;
@@ -234,18 +227,23 @@ static void *kmer_class_thread(void *arg)
         }
 
       // 4. Wall detection
-      // TODO: use 'EHDR' for `pasgn`
-      find_wall(profile,plen,ctx,emodel,perror,cerror,eintvl,intvl,rintvl,wall,pasgn,K,&N,&M);
+      N = find_wall(warg,intvl,profile,plen,ctx,emodel,K);
+#ifdef DEBUG_ITER
+      fprintf(stderr,"%d intvls",N);
+#endif
+
+      // 5. Reliable interval detection
+      M = find_rel_intvl(intvl,N,rintvl,profile,ctx,K);
 #ifdef DEBUG_ITER
       int rtot = 0;
       for (int i = 0; i < M; i++)
-        rtot += rintvl[i].j - rintvl[i].i;
-      fprintf(stderr,"%d (/%d; %d %%) rel intvls",M,N,(int)(100.*rtot/plen));
+        rtot += rintvl[i].e - rintvl[i].b;
+      fprintf(stderr,", %d rel intvls (%%base=%d)",M,(int)(100.*rtot/plen));
 #endif
 
 #ifdef DO_PMM
       // Local coverage estimation via Poisson mixture model (optional)
-      int nnorm = pmm_vi(profile,nprofile,plen,eta,lambda);
+      int nnorm = pmm_vi(parg,profile,plen,lambda);
 #ifdef DEBUG_ITER
       fprintf(stderr,", (H,D)=(%.lf,%.lf) (%d %% normal)",lambda[0],lambda[1],(int)(100.*nnorm/plen));
 #endif
@@ -256,24 +254,24 @@ static void *kmer_class_thread(void *arg)
       fflush(stderr);
 #endif
 
-      // 5. Classification of reliable intervals and then the rest
-      // TODO: use 'EHDR' for `asgn`
-      { classify_reliable(rintvl,M,intvl,N,plen,perror,cerror,lambda_prior[0],lambda_prior[1]);
-        classify_unreliable(profile,plen,intvl,N,perror,lambda_prior[0],lambda_prior[1]);
+      // 6. Classification of reliable intervals and then the rest
+      { classify_rel(rel_arg,rintvl,M,intvl,N,plen);
+        classify_unrel(intvl,N);
         for (int i = 0; i < N; i++)
           { Intvl I = intvl[i];
-            for (int j = I.i; j < I.j; j++)
-              pasgn[j] = I.asgn;
+            char c = stoc[(int)I.asgn];
+            for (pos_t j = I.b; j < I.e; j++)
+              pasgn[j] = c;
           }
         rasgn[rlen] = '\0';
-        // remove_slip(profile,plen,ctx,crack);   // TODO: change to `pasgn`
+        // remove_slip(pasgn,profile,plen,ctx);
       }
 
 #ifdef DEBUG_SINGLE
       continue;
 #endif
 
-      // 6. Output to .class file (and optionally DAZZ track)
+      // 7. Output to .class file (and optionally DAZZ track)
       { fprintf(data->cfile,"%s\n%s\n+\n%s\n",header,seq,rasgn);
 #ifdef WRITE_TRACK
         if (IS_DB)
@@ -299,26 +297,33 @@ static void *kmer_class_thread(void *arg)
 #endif
     }
   free(profile);
-#ifdef DO_PMM
-  free(nprofile);
-  free(eta);
-#endif
   free(_lctx);
   free(rctx);
-  free(perror);
-  free(cerror);
-  for (int i = SELF; i <= OTHERS; i++)
-    free(eintvl[i]);
   free(intvl);
   free(rintvl);
-  free(wall);
   free(rasgn);
+  free_wall_arg(warg);
+  free_rel_arg(rel_arg, rlen_max);
+#ifdef DO_PMM
+  free_pmm_arg(parg);
+#endif
 
 #ifdef DEBUG_SINGLE
 class_exit:
 #endif
 
   return (NULL);
+}
+
+static void free_arg(Arg *arg)
+{ for (int i = 0; i < arg->nfiles; i++)
+    free(arg->snames[i]);
+  free(arg->snames);
+  free(arg->fk_root);
+  free(arg->tmp_path);
+  free(arg);
+
+  return;
 }
 
 static Arg *parse_arg(int argc, char *argv[])
@@ -331,7 +336,7 @@ static Arg *parse_arg(int argc, char *argv[])
   ARG_INIT("ClassPro");
 
   arg->nthreads = (int)DEFAULT_NTHREADS;
-  arg->cov      = -1;
+  arg->cov      = 0;
   arg->rlen     = (int)DEFAULT_RLEN;
   arg->tmp_path = (char *)DEFAULT_TMP_PATH;
   arg->fk_root  = NULL;
@@ -467,22 +472,11 @@ static Arg *parse_arg(int argc, char *argv[])
   return arg;
 }
 
-static void free_arg(Arg *arg)
-{ for (int i = 0; i < arg->nfiles; i++)
-    free(arg->snames[i]);
-  free(arg->snames);
-  free(arg->fk_root);
-  free(arg->tmp_path);
-  free(arg);
-
-  return;
-}
-
 int main(int argc, char *argv[])
 { Arg           *arg;
   Class_Arg     *paramc;
   Merge_Arg     *paramm;
-  THREAD        *threads;
+  pthread_t     *threads;
   Profile_Index *P;
   Error_Model   *emodel;
 
@@ -493,7 +487,7 @@ int main(int argc, char *argv[])
 
     paramc   = Malloc(sizeof(Class_Arg)*arg->nthreads,"Allocating class args");
     paramm   = Malloc(sizeof(Merge_Arg)*N_OTYPE,"Allocate merge args");
-    threads  = Malloc(sizeof(THREAD)*arg->nthreads,"Allocating class threads");
+    threads  = Malloc(sizeof(pthread_t)*arg->nthreads,"Allocating class threads");
   }
   
   // Precompute several values
@@ -521,6 +515,7 @@ int main(int argc, char *argv[])
     GLOBAL_COV[DIPLO] = lambda_prior[1];
     GLOBAL_COV[ERROR] = 1;
     GLOBAL_COV[REPEAT] = plus_sigma(GLOBAL_COV[DIPLO],N_SIGMA_RCOV);
+    DR_RATIO = 1.+(double)N_SIGMA_R*(1./sqrt(GLOBAL_COV[DIPLO]));
 
     // 5. Thresholds of a count change due to errors in self and errors in others
     //    Context-specific sequcning error model is also loaded
@@ -565,7 +560,11 @@ int main(int argc, char *argv[])
 #else
     const int b = CLASS+1;   // Skip .class file because already merged
 #endif
+#ifdef WRITE_TRACK
     const int e = (arg->is_db) ? N_OTYPE : CLASS+1;
+#else
+    const int e = CLASS+1;
+#endif
 
     if (VERBOSE)
       fprintf(stderr,"\nMerging files...\n");

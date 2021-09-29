@@ -36,7 +36,7 @@ const char     ctos[128]        = { 0, 0, 0, 0, 0, 0, 0, 0,
                                     0, 0, 0, 0, 0, 0, 0, 0  };
 #endif
 
-#define N_EXT 10
+#define        N_EXT              10
 const char    *EXT[N_EXT]       = { ".db",       ".dam",
                                     ".fastq",    ".fasta",
                                     ".fq",       ".fa",
@@ -46,6 +46,8 @@ const char    *EXT[N_EXT]       = { ".db",       ".dam",
 const Out_Info O_INFO[N_OTYPE]  = { { "/",  ".class",      false, false },
                                     { "/.", ".class.data", false, true  },
                                     { "/.", ".class.anno", true,  true  }  };
+
+#define        MAX_KMER_CNT       32767
 
 /****************************************************************************
  *
@@ -80,3 +82,4 @@ const int      OFFSET           = 1000;
 const int      N_SIGMA_R        = 2;
 const double   R_LOGP           = -10.;
 const double   E_PO_BASE        = -10.;
+const double   PE_MEAN          = 0.01;

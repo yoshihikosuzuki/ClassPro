@@ -7,28 +7,258 @@
 
 #include "ClassPro.h"
 
-static inline double logp_diff(int cout_drop, int cin_drop, int cin_gain, int cout_gain)
-{ int ndrop = cout_drop - cin_drop;
-  int ngain = cout_gain - cin_gain;
-  double _lambda = (double)MAX(cout_drop,cout_gain)/READ_LEN;
-  return logp_skellam(ndrop-ngain,_lambda);
+static uint8  CMAX;
+static double HC_ERATE;
+
+static Error_Model *load_emodel()
+{ Error_Model *emodel = Malloc(sizeof(Error_Model)*N_CTYPE,"Allocating error model");
+  for (int t = HP; t <= TS; t++)
+    { emodel[t].lmax = (uint8)(MAX_N_LC/(t+1));
+
+      // TODO: change to loading table
+      emodel[t].pe = Malloc(sizeof(double)*(emodel[t].lmax+1),"Allocating pe");
+      emodel[t].pe[0] = 0.;
+      for (int l = 1; l <= emodel[t].lmax; l++)
+        emodel[t].pe[l] = 0.002 * l * l + 0.002;
+
+      emodel[t].cthres = Malloc(sizeof(uint8***)*(emodel[t].lmax+1),"Allocating cthres");
+      for (int l = 1; l <= emodel[t].lmax; l++)
+        { emodel[t].cthres[l] = Malloc(sizeof(uint8**)*CMAX,"Allocating cthres l");
+          for (int c = 1; c < CMAX; c++)
+            { emodel[t].cthres[l][c] = Malloc(sizeof(uint8*)*N_THRES,"Allocating cthres pe");
+              for (int s = INIT; s <= FINAL; s++)
+                emodel[t].cthres[l][c][s] = Malloc(sizeof(uint8)*N_ETYPE,"Allocating cthres thresT");
+            }
+        }
+    }
+  return emodel;
 }
 
-static void check_drop(int i, const uint16 *profile, int plen, Seq_Ctx *ctx[2], Error_Model *emodel, P_Error *perror, Error_Intvl *eintvl[N_ETYPE], const int eidx, const int K)
-{ double max_p[N_ETYPE] = {-1., -1.};
-  int    max_j[N_ETYPE] = {-1, -1};
+void free_emodel(Error_Model *emodel)
+{ for (int t = HP; t <= TS; t++)
+    { free(emodel[t].pe);
+      for (int l = 1; l <= emodel[t].lmax; l++)
+        { for (int c = 1; c < CMAX; c++)
+            { for (int s = INIT; s <= FINAL; s++)
+                free(emodel[t].cthres[l][c][s]);
+              free(emodel[t].cthres[l][c]);
+            }
+          free(emodel[t].cthres[l]);
+        }
+      free(emodel[t].cthres);
+    }
+  free(emodel);
+  return;
+}
 
-  const double _pe = emodel[0].pe[1];
-  double pe, ps, po, logp_d;
-  int m, n, j;
-  
-  const int ipk = i+K-1;
+Error_Model *calc_init_thres()
+{ Error_Model *emodel;
+  uint8        cout, cin;
+  uint8        ct[N_ETYPE];
+  double       psum;
+  bool         is_found[N_THRES][N_ETYPE];
 
-#ifdef DEBUG_ERROR
-  fprintf(stderr,"j >= %d + n - m\n",ipk);
+  if (GLOBAL_COV[REPEAT] > 255)
+    { fprintf(stderr,"Too high REPEAT coverage (%d) > 255\n",GLOBAL_COV[REPEAT]);
+      exit(1);
+    }
+  CMAX = GLOBAL_COV[REPEAT];
+  emodel = load_emodel();
+  HC_ERATE = emodel[HP].pe[1];
+
+#ifdef DEBUG_EMODEL
+  fprintf(stderr,"Thresholds for initial wall filtering (cmax = %d):\n",CMAX);
+  fprintf(stderr,"          cout       :");
+  for (cout = 1; cout < CMAX; cout++)
+    fprintf(stderr," %3d",cout);
+  fprintf(stderr,"\n  ( t, l, pe)\n");
 #endif
 
-  pe = _pe;
+  for (int t = HP; t <= TS; t++)
+    for (int l = 1; l <= emodel[t].lmax; l++)
+      { double pe = emodel[t].pe[l];
+        double lpe = log(pe);
+        double l1mpe = log(1-pe);
+
+#ifdef DEBUG_EMODEL
+      fprintf(stderr,"  (%2d,%2d, %.3lf)\n",t,l,pe);
+#endif
+        for (cout = 1; cout < CMAX; cout++)
+          { // initialize
+            ct[SELF] = cout;
+            ct[OTHERS] = 0;
+            for (int s = INIT; s <= FINAL; s++)
+              for (int e = SELF; e <= OTHERS; e++)
+                { emodel[t].cthres[l][cout][s][e] = ct[e];
+                  is_found[s][e] = false;
+                }
+            // find thresholds
+            psum = 1.;
+            for (cin = 0; cin <= cout; cin++)
+              { if (is_found[INIT][SELF] && is_found[FINAL][SELF]
+                    && is_found[INIT][OTHERS] && is_found[FINAL][OTHERS])
+                  break;
+                ct[SELF] = cin;
+                ct[OTHERS] = cout-cin;
+                psum -= exp(logp_binom_pre(cin,cout,lpe,l1mpe));
+                for (int s = INIT; s <= FINAL; s++)
+                  for (int e = SELF; e <= OTHERS; e++)
+                    if (!is_found[s][e] && psum < PE_THRES[s][e])
+                      { emodel[t].cthres[l][cout][s][e] = ct[e];
+                        is_found[s][e] = true;
+                      }
+              }
+          }
+#ifdef DEBUG_EMODEL
+        fprintf(stderr,"          cin(S_init ):");
+        for (cout = 1; cout < CMAX; cout++)
+          fprintf(stderr," %3d",emodel[t].cthres[l][cout][INIT][SELF]);
+        fprintf(stderr,"\n          cin(S_final):");
+        for (cout = 1; cout < CMAX; cout++)
+          fprintf(stderr," %3d",emodel[t].cthres[l][cout][FINAL][SELF]);
+        fprintf(stderr,"\n          cin(O_init ):");
+        for (cout = 1; cout < CMAX; cout++)
+          fprintf(stderr," %3d",emodel[t].cthres[l][cout][INIT][OTHERS]);
+        fprintf(stderr,"\n          cin(O_final):");
+        for (cout = 1; cout < CMAX; cout++)
+          fprintf(stderr," %3d",emodel[t].cthres[l][cout][FINAL][OTHERS]);
+        fprintf(stderr,"\n");
+        fflush(stderr);
+#endif
+      }
+
+  return emodel;
+}
+
+Wall_Arg *alloc_wall_arg(int rlen_max)
+{ Wall_Arg *arg = Malloc(sizeof(Wall_Arg),"Allocating wall arg");
+  arg->wall     = Malloc((rlen_max+1)*sizeof(char),"Wall array");
+  arg->eintvl   = Malloc(rlen_max*sizeof(Error_Intvl),"Error(S) intvl array");
+  arg->ointvl   = Malloc(rlen_max*sizeof(Error_Intvl),"Error(O) intvl array");
+  arg->perror   = Malloc((rlen_max+1)*sizeof(P_Error),"Error prob array");
+  return arg;
+}
+
+void free_wall_arg(Wall_Arg *arg)
+{ free(arg->wall);
+  free(arg->eintvl);
+  free(arg->ointvl);
+  free(arg->perror);
+  free(arg);
+  return;
+}
+
+static const char MASK_WALL_BY[N_ETYPE]   = { 0x01, 0x10 };
+static const char MASK_PAIRED_BY[N_ETYPE] = { 0x02, 0x20 };
+static const char MASK_WALL_MULT          = 0x04;
+static const char MASK_PAIRED_MULT        = 0x40;
+static const char MASK_WALL               = 0x08;
+static const char MASK_ERROR              = 0x80;
+
+static inline bool is_wall_by(enum Etype e, char *wall, int i)
+  { return (wall[i] & MASK_WALL_BY[e]) ? true : false; }
+
+static inline void set_wall_by(enum Etype e, char *wall, int i)
+  { wall[i] |= MASK_WALL_BY[e]; return; }
+
+static inline void unset_wall_by(enum Etype e, char *wall, int i)
+  { wall[i] &= ~(MASK_WALL_BY[e]); return; }
+
+static inline bool is_paired(enum Etype e, char *wall, int i)
+  { return (wall[i] & MASK_PAIRED_BY[e]) ? true : false; }
+
+static inline void set_paired(enum Etype e, char *wall, int i)
+  { wall[i] |= MASK_PAIRED_BY[e]; return; }
+
+static inline bool is_wall_by_mult(char *wall, int i)
+  { return (wall[i] & MASK_WALL_MULT) ? true : false; }
+
+static inline void set_wall_by_mult(char *wall, int i)
+  { wall[i] |= MASK_WALL_MULT; return; }
+
+static inline bool is_paired_mult(char *wall, int i)
+  { return (wall[i] & MASK_PAIRED_MULT) ? true : false; }
+
+static inline void set_paired_mult(char *wall, int i)
+  { wall[i] |= MASK_PAIRED_MULT; return; }
+
+static inline bool is_wall(char *wall, int i)
+  { return (wall[i] & MASK_WALL) ? true : false; }
+
+static inline void set_wall(char *wall, int i)
+  { wall[i] |= MASK_WALL; return; }
+
+static inline bool is_error(char *wall, int i)
+  { return (wall[i] & MASK_ERROR) ? true : false; }
+
+static inline void set_error(char *wall, int i)
+  { wall[i] |= MASK_ERROR; return; }
+
+static inline void update_perror(P_Error *perror, int i, enum Etype e, enum Wtype w,
+                                 cnt_t cout, cnt_t cin, double erate)
+{ if (perror[i][e][w] == -INFINITY)
+    perror[i][e][w] = p_errorin(e,erate,cout,cin);
+  return;
+}
+
+static inline double logp_diff_pair(pos_t i, pos_t j, const cnt_t *profile)
+{ int n_drop = (int)profile[i-1]-profile[i];
+  int n_gain = (int)profile[j]-profile[j-1];
+  cnt_t cov  = MAX(profile[i-1],profile[j]);
+  return logp_trans(i,j,n_drop,n_gain,cov);
+}
+
+static inline bool cthres_ng(enum Etype e, uint8 cin, uint8 ct)
+{ if (e == SELF)
+    return (cin >= ct) ? true : false;
+  else
+    return (cin < ct) ? true : false;
+}
+
+static bool find_gain(int i, cnt_t cout, cnt_t cin, enum Etype e, enum Ctype t, int l, double erate,
+                      P_Error *perror, Error_Intvl *intvl, int *idx,
+                      cnt_t *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, int K)
+{ int    m, n, j, max_j;
+  double pe, max_pe;
+  cnt_t  cout_j, cin_j;
+  
+  const int ipk  = i+K-1;
+  const int ulen = t+1;
+
+  max_j = -1;
+  max_pe = -INFINITY;
+
+  // Low-complexity error
+  m = ulen*l;
+  n = 0;
+  while (true)
+    { int idx = i+ulen*(n+1);
+      if (idx >= plen || ctx[DROP][idx][t] != m+n+1)
+        break;
+      n++;
+    }
+  j = ipk+n-m;
+  if (j <= i)
+    return false;
+  if (j >= plen)
+    { j = plen;
+      pe = perror[i][e][DROP] * perror[i][e][DROP];
+    }
+  else
+    { cin_j  = profile[j-1];
+      cout_j = profile[j];
+      pe = -INFINITY;
+      if (cin_j <= cout_j
+          && !(cout_j < CMAX && cthres_ng(e,cin_j,emodel[t].cthres[l][cout_j][FINAL][e]))
+          && (e == SELF || logp_diff_pair(i,j,profile) >= THRES_DIFF_EO))
+        { update_perror(perror,j,e,GAIN,cout_j,cin_j,erate);
+          pe = perror[i][e][DROP]*perror[j][e][GAIN];
+        }
+    }
+  if (max_pe < pe)
+    { max_j  = j;
+      max_pe = pe;
+    }
 
   // High-complexity errors
   m = 0;
@@ -36,667 +266,640 @@ static void check_drop(int i, const uint16 *profile, int plen, Seq_Ctx *ctx[2], 
     { j = ipk+n-m;
       if (j >= plen)
         break;
-      
-      if (n > 1)
-        pe *= _pe;
-
-      // TODO: pe is used NOT here BUT BinomTest... => precompute binom for pe, pe^2, ..., pe^5 (ok for pe?)
-      // TODO: Make sure both spe[i] and spe[j] are computed with the same error type
-      ps = perror[i][SELF][DROP] * perror[j][SELF][GAIN] * pe;
-      po = perror[i][OTHERS][DROP] * perror[j][OTHERS][GAIN] * pe;
-      // check p_diff (i.e. Skellam)?
-      logp_d = logp_diff(profile[i-1],profile[i],profile[j-1],profile[j]);
-
-      if (max_p[0] < ps)
-        { max_p[0] = ps;
-          max_j[0] = j;
-        }
-      if (logp_d > THRES_DIFF_EO && max_p[1] < po)
-        { max_p[1] = po;
-          max_j[1] = j;
-        }
-
-      // TODO: In the case of errors in others, find max(pe * p_diff) and return only pe? (to find a pair with a similar count change, as no count change gives probability 1)
-
-#ifdef DEBUG_ERROR
-      fprintf(stderr,"  @ j = %d (m = %d, n = %d): %d -> %d\n",j,m,n,profile[j-1],profile[j]);
-      fprintf(stderr,"    Ps (= %lf * %lf * %lf) = %lf",perror[i][SELF][DROP],perror[j][SELF][GAIN],pe,ps);
-      if (ps > PE_THRES[FINAL][SELF])
-        fprintf(stderr," ***");
-      fprintf(stderr,"\n");
-      fprintf(stderr,"    Po (= %lf * %lf * %lf) = %lf (LPd = %lf)",perror[i][OTHERS][DROP],perror[j][OTHERS][GAIN],pe,po,logp_d);
-      if (logp_d > THRES_DIFF_EO && po > PE_THRES[FINAL][OTHERS])
-        fprintf(stderr," ***");
-      fprintf(stderr,"\n");
-#endif
-    }
-
-  // Low-complexity errors   // TODO: consider only max prob error type?
-  for (int t = 0; t < 3; t++)
-    { m = ctx[0][i][t];
-      if (m == 0)
+      cin_j  = profile[j-1];
+      cout_j = profile[j];
+      if (!(cin_j <= cout_j))
         continue;
 
-      int flag_of = 0;
-      n = 0;
-      while (1)
-        { int idx = i+(t+1)*(n+1);
-          if (idx >= plen)
-            { flag_of = 1;
-              break;
-            }
-          if (ctx[0][idx][t] != m+n+1)
-            break;
-          n++;
-        }
+      if ((cout < CMAX && cthres_ng(e,cin,emodel[HP].cthres[1][cout][FINAL][e]))
+          || (cout_j < CMAX && cthres_ng(e,cin_j,emodel[HP].cthres[1][cout_j][FINAL][e])))
+        continue;
+      if (e == OTHERS && logp_diff_pair(i,j,profile) < THRES_DIFF_EO)
+        continue;
       
-      if (flag_of)
-        { ps = perror[i][SELF][DROP] * perror[i][SELF][DROP];
-          po = perror[i][OTHERS][DROP] * perror[i][OTHERS][DROP];
-
-#ifdef DEBUG
-          fprintf(stderr,"Drop ctx overflow!\n");
-#endif
-          continue;  // TODO: special treatment instaed of skip?
-        }
-      else
-        { m *= t+1;
-          n *= t+1;
-
-          j = ipk+n-m;
-          if (j >= plen)
-            continue;
-
-          if (profile[j-1]>=profile[j])   // NOTE: not allowing tie counts
-            { perror[j][SELF][GAIN] = 0.;
-              perror[j][OTHERS][GAIN] = 1.;
-            }
-          else
-            { perror[j][SELF][GAIN] = binom_test_g(profile[j-1],profile[j],emodel[t].pe[MIN(ctx[1][j][t],emodel[t].lmax)],0);
-              perror[j][OTHERS][GAIN] = binom_test_g(profile[j]-profile[j-1],profile[j],emodel[t].pe[MIN(ctx[1][j][t],emodel[t].lmax)],0);
-            }
-
-          ps = perror[i][SELF][DROP] * perror[j][SELF][GAIN];
-          po = perror[i][OTHERS][DROP] * perror[j][OTHERS][GAIN];
-          logp_d = logp_diff(profile[i-1],profile[i],profile[j-1],profile[j]);
-
-#ifdef DEBUG_ERROR
-      fprintf(stderr,"  @ j = %d (t = %d, m = %d, n = %d): %d -> %d\n",j,t,m,n,profile[j-1],profile[j]);
-      fprintf(stderr,"    Ps (= %lf * %lf) = %lf",perror[i][SELF][DROP],perror[j][SELF][GAIN],ps);
-      if (ps > PE_THRES[FINAL][SELF])
-        fprintf(stderr," ***");
-      fprintf(stderr,"\n");
-      fprintf(stderr,"    Po (= %lf * %lf) = %lf (LPd = %lf)",perror[i][OTHERS][DROP],perror[j][OTHERS][GAIN],po,logp_d);
-      if (logp_d > THRES_DIFF_EO && po > PE_THRES[FINAL][OTHERS])
-        fprintf(stderr," ***");
-      fprintf(stderr,"\n");
-#endif
-        }
-
-      if (max_p[0] < ps)
-        { max_p[0] = ps;
-          max_j[0] = j;
-        }
-      if (logp_d > THRES_DIFF_EO && max_p[1] < po)
-        { max_p[1] = po;
-          max_j[1] = j;
+      // TODO: improve this heavy computation with small gain...
+      double pe_i = p_errorin(e,HC_ERATE,cout,cin);
+      double pe_j = p_errorin(e,HC_ERATE,cout_j,cin_j);
+      pe = pe_i * pe_j;
+      if (max_pe < pe)
+        { max_j  = j;
+          max_pe = pe;
         }
     }
 
-  for (int e = SELF; e <= OTHERS; e++)
-    { eintvl[e][eidx].i = i;
-      eintvl[e][eidx].j = max_j[e];
-      eintvl[e][eidx].pe = max_p[e];
-    }
+  if (max_j == -1)
+    return false;
 
-  return;
+  intvl[*idx].b  = i;
+  intvl[*idx].e  = max_j;
+  intvl[*idx].pe = max_pe;
+
+// #ifdef DEBUG_WALL
+//   fprintf(stderr,"  @ max_j = %d (d=%d): %d -> %d (pe=%lf)\n",
+//                  max_j,max_j-i,profile[max_j-1],profile[max_j],max_pe);
+// #endif
+
+  return true;
 }
 
-static void check_gain(int i, const uint16 *profile, Seq_Ctx *ctx[2], Error_Model *emodel, P_Error *perror, Error_Intvl *eintvl[N_ETYPE], const int eidx, const int K)
-{ double max_p[N_ETYPE] = {-1., -1.};
-  int    max_j[N_ETYPE] = {-1, -1};
-
-  const double _pe = emodel[0].pe[1];
-  double pe, ps, po, logp_d;
-  int m, n, j;
+static bool find_drop(int i, cnt_t cout, cnt_t cin, enum Etype e, enum Ctype t, int l, double erate,
+                      P_Error *perror, Error_Intvl *intvl, int *idx,
+                      cnt_t *profile, Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, int K)
+{ int    m, n, j, max_j;
+  double pe, max_pe;
+  cnt_t  cout_j, cin_j;
   
-  const int ipk = i-K+1;
+  const int imk  = i-K+1;
+  const int ulen = t+1;
 
-#ifdef DEBUG_ERROR
-  fprintf(stderr,"j <= %d - n + m\n",ipk);
-#endif
+  max_j = -1;
+  max_pe = -INFINITY;
 
-  pe = _pe;
+  // Low-complexity error
+  m = ulen*l;
+  n = 0;
+  while (true)
+    { int idx = i-ulen*(n+1);
+      if (idx < 0 || ctx[GAIN][idx][t] != m+n+1)
+        break;
+      n++;
+    }
+  j = imk-n+m;
+  if (j >= i)
+    return false;
+  if (j <= 0)
+    { j = 0;
+      pe = perror[i][e][GAIN] * perror[i][e][GAIN];
+    }
+  else
+    { cout_j = profile[j-1];
+      cin_j  = profile[j];
+      pe = -INFINITY;
+      if (cin_j <= cout_j
+          && !(cout_j < CMAX && cthres_ng(e,cin_j,emodel[t].cthres[l][cout_j][FINAL][e]))
+          && (e == SELF || logp_diff_pair(j,i,profile) >= THRES_DIFF_EO))
+        { update_perror(perror,j,e,DROP,cout_j,cin_j,erate);
+          pe = perror[j][e][DROP]*perror[i][e][GAIN];
+        }
+    }
+  if (max_pe < pe)
+    { max_j  = j;
+      max_pe = pe;
+    }
 
   // High-complexity errors
   m = 0;
   for (n = 0; n <= MAX_N_HC; n++)
-    { j = ipk-n+m;
-      if (j < 0)
+    { j = imk-n+m;
+      if (j <= 0)
         break;
-      
-      if (n > 1)
-        pe *= _pe;
-
-      // TODO: pe is used NOT here BUT BinomTest... => precompute binom for pe, pe^2, ..., pe^5 (ok for pe?)
-      // TODO: Make sure both spe[i] and spe[j] are computed with the same error type
-      ps = perror[j][SELF][DROP] * perror[i][SELF][GAIN] * pe;
-      po = perror[j][OTHERS][DROP] * perror[i][OTHERS][GAIN] * pe;
-      // check p_diff (i.e. Skellam)?
-      logp_d = logp_diff(profile[j-1],profile[j],profile[i-1],profile[i]);
-      // TODO: Multiply Pr(read start)^(# of count differences)?
-
-      if (max_p[0] < ps)
-        { max_p[0] = ps;
-          max_j[0] = j;
-        }
-      if (logp_d > THRES_DIFF_EO && max_p[1] < po)
-        { max_p[1] = po;
-          max_j[1] = j;
-        }
-
-#ifdef DEBUG_ERROR
-      fprintf(stderr,"  @ j = %d (m = %d, n = %d): %d -> %d\n",j,m,n,profile[j-1],profile[j]);
-      fprintf(stderr,"    Ps (= %lf * %lf * %lf) = %lf",perror[j][SELF][DROP],perror[i][SELF][GAIN],pe,ps);
-      if (ps > PE_THRES[FINAL][SELF])
-        fprintf(stderr," ***");
-      fprintf(stderr,"\n");
-      fprintf(stderr,"    Po (= %lf * %lf * %lf) = %lf (LPd = %lf)",perror[j][OTHERS][DROP],perror[i][OTHERS][GAIN],pe,po,logp_d);
-      if (logp_d > THRES_DIFF_EO && po > PE_THRES[FINAL][OTHERS])
-        fprintf(stderr," ***");
-      fprintf(stderr,"\n");
-#endif
-    }
-
-  // Low-complexity errors   // TODO: consider only max prob error type?
-  for (int t = 0; t < 3; t++)
-    { m = ctx[1][i][t];
-      if (m == 0)
+      cout_j = profile[j-1];
+      cin_j  = profile[j];
+      if (!(cin_j <= cout_j))
         continue;
 
-      int flag_of = 0;
-      n = 0;
-      while (1)
-        { int idx = i-(t+1)*(n+1);
-          if (idx < 0)
-            { flag_of = 1;
-              break;
-            }
-          if (ctx[1][idx][t] != m+n+1)
+      if ((cout < CMAX && cthres_ng(e,cin,emodel[HP].cthres[1][cout][FINAL][e]))
+          || (cout_j < CMAX && cthres_ng(e,cin_j,emodel[HP].cthres[1][cout_j][FINAL][e])))
+        continue;
+      if (e == OTHERS && logp_diff_pair(j,i,profile) < THRES_DIFF_EO)
+        continue;
+      
+      // TODO: improve this heavy computation with small gain...
+      double pe_i = p_errorin(e,HC_ERATE,cout,cin);
+      double pe_j = p_errorin(e,HC_ERATE,cout_j,cin_j);
+      pe = pe_i * pe_j;
+      if (max_pe < pe)
+        { max_j  = j;
+          max_pe = pe;
+        }
+    }
+
+  if (max_j == -1)
+    return false;
+
+  intvl[*idx].b  = max_j;
+  intvl[*idx].e  = i;
+  intvl[*idx].pe = max_pe;
+
+// #ifdef DEBUG_WALL
+//   fprintf(stderr,"  @ max_j = %d (d=%d): %d -> %d (pe=%lf)\n",
+//                  max_j,i-max_j,profile[max_j-1],profile[max_j],max_pe);
+// #endif
+
+  return true;
+}
+
+static inline bool find_pair(int i, cnt_t cout, cnt_t cin,
+                             enum Etype e, enum Wtype w, enum Ctype t, int l, double erate,
+                             P_Error *perror, Error_Intvl *intvl, int *idx,
+                             cnt_t *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, int K)
+{ if (w == DROP)
+    return find_gain(i,cout,cin,e,t,l,erate,perror,intvl,idx,profile,plen,ctx,emodel,K);
+  else
+    return find_drop(i,cout,cin,e,t,l,erate,perror,intvl,idx,profile,ctx,emodel,K);
+}
+
+static int compare_eintvl(const void *a, const void *b)
+{ if (((Error_Intvl*)a)->b == ((Error_Intvl*)b)->b)
+    { if (((Error_Intvl*)a)->e == ((Error_Intvl*)b)->e)
+        return ((Error_Intvl*)b)->pe - ((Error_Intvl*)a)->pe;
+      else
+        return ((Error_Intvl*)a)->e - ((Error_Intvl*)b)->e;
+    }
+  else
+    return ((Error_Intvl*)a)->b - ((Error_Intvl*)b)->b;
+}
+
+static int bs_eintvl(Error_Intvl *intvl, int l, int r, pos_t b, pos_t e) {
+  if (l > r)
+     return -1;
+  int m = (l+r)/2;
+  if (intvl[m].b == b)
+    { if (intvl[m].e == e)
+        return m;
+      else if (e > intvl[m].e)
+        return bs_eintvl(intvl,m+1,r,b,e);
+      else
+        return bs_eintvl(intvl,l,m-1,b,e);
+    }
+  else if (b > intvl[m].b)
+    return bs_eintvl(intvl,m+1,r,b,e);
+  else
+    return bs_eintvl(intvl,l,m-1,b,e);
+}
+
+static inline int remove_duplicates(Error_Intvl *intvl, int N)
+{ qsort(intvl,N,sizeof(Error_Intvl),compare_eintvl);
+  if (N >= 2)
+    { int i = 1;
+      while (i < N)
+        { if (intvl[i-1].b == intvl[i].b && intvl[i-1].e == intvl[i].e)
             break;
-          n++;
+          i++;
         }
-      
-      if (flag_of)
-        { ps = perror[i][SELF][GAIN] * perror[i][SELF][GAIN];
-          po = perror[i][OTHERS][GAIN] * perror[i][OTHERS][GAIN];
-
-#ifdef DEBUG
-          fprintf(stderr,"Gain ctx overflow!\n");
-#endif
-          continue;   // TODO: special treatment instaed of skip?
-        }
-      else
-        { m *= t+1;
-          n *= t+1;
-
-          j = ipk-n+m;
-          if (j <= 0)
-            continue;
-
-          if (profile[j-1]<=profile[j])   // not allowing tie counts
-            { perror[j][SELF][DROP] = 0.;
-              perror[j][OTHERS][DROP] = 1.;
+      for (int j = i+1; j < N; j++)
+        { if (!(intvl[i-1].b == intvl[j].b && intvl[i-1].e == intvl[j].e))
+            { intvl[i].b  = intvl[j].b;
+              intvl[i].e  = intvl[j].e;
+              intvl[i].pe = intvl[j].pe;
+              i++;
             }
-          else
-            { perror[j][SELF][DROP] = binom_test_g(profile[j],profile[j-1],emodel[t].pe[MIN(ctx[0][j][t],emodel[t].lmax)],0);
-              perror[j][OTHERS][DROP] = binom_test_g(profile[j-1]-profile[j],profile[j-1],emodel[t].pe[MIN(ctx[0][j][t],emodel[t].lmax)],0);
-            }
-
-          ps = perror[j][SELF][DROP] * perror[i][SELF][GAIN];
-          po = perror[j][OTHERS][DROP] * perror[i][OTHERS][GAIN];
-          logp_d = logp_diff(profile[j-1],profile[j],profile[i-1],profile[i]);
-
-#ifdef DEBUG_ERROR
-      fprintf(stderr,"  @ j = %d (t = %d, m = %d, n = %d): %d -> %d\n",j,t,m,n,profile[j-1],profile[j]);
-      fprintf(stderr,"    Ps (= %lf * %lf) = %lf",perror[j][SELF][DROP],perror[i][SELF][GAIN],ps);
-      if (ps > PE_THRES[FINAL][SELF])
-        fprintf(stderr," ***");
-      fprintf(stderr,"\n");
-      fprintf(stderr,"    Po (= %lf * %lf) = %lf (LPd = %lf)",perror[j][OTHERS][DROP],perror[i][OTHERS][GAIN],po,logp_d);
-      if (logp_d > THRES_DIFF_EO && po > PE_THRES[FINAL][OTHERS])
-        fprintf(stderr," ***");
-      fprintf(stderr,"\n");
-#endif
         }
-
-      if (max_p[0] < ps)
-        { max_p[0] = ps;
-          max_j[0] = j;
-        }
-      if (logp_d > THRES_DIFF_EO && max_p[1] < po)
-        { max_p[1] = po;
-          max_j[1] = j;
-        }
+      N = i;
     }
-
-  for (int e = SELF; e <= OTHERS; e++)
-    { eintvl[e][eidx].i = max_j[e];
-      eintvl[e][eidx].j = i;
-      eintvl[e][eidx].pe = max_p[e];
-    }
-
-  return;
+  return N;
 }
 
-static void correct_wall_cnt(int beg, int end, int *ci, int *cj, const uint16 *profile, Seq_Ctx *ctx[N_WTYPE], const int K)
-{ int n_gain = 0, n_drop = 0;
-  int first, last, lmax;
+int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
+              Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, int K)
+{ char        *wall      = arg->wall;
+  Error_Intvl *eintvl    = arg->eintvl;   // TODO: merge eintvl and ointvl?
+  Error_Intvl *ointvl    = arg->ointvl;
+  P_Error     *perror    = arg->perror;
 
-  last = MIN(beg+K-1,end-1);
-  for (int i = beg; i < last; i++)
-    n_gain += MAX((int)profile[i+1]-profile[i],0);
-  if (beg+K-1 < end)
-    { lmax = 0;
-      for (int t = HP; t <= TS; t++)
-        { int l = ctx[GAIN][beg+K-1][t]*(t+1);
-          if (lmax < l)
-            lmax = l;
-        }
-      last = beg+lmax;
-      for (int i = beg; i < last; i++)
-        n_gain -= MAX((int)profile[i]-profile[i+1],0);
-    }
-  
-  first = MAX(end-K+1,beg);
-  for (int i = first; i < end-1; i++)
-    n_drop += MAX((int)profile[i]-profile[i+1],0);
-  if (beg < end-K+1)
-    { lmax = 0;
-      for (int t = HP; t <= TS; t++)
-        { int l = ctx[DROP][end-K+1][t]*(t+1);
-          if (lmax < l)
-            lmax = l;
-        }
-      first = end-lmax;
-      for (int i = first; i < end-1; i++)
-        n_drop -= MAX((int)profile[i+1]-profile[i],0);
-    }
-
-  *ci = MIN(profile[beg]+MAX(n_gain,0),32767);
-  *cj = MIN(profile[end-1]+MAX(n_drop,0),32767);
-
-  last = MIN(beg+2*K,end);
-  for (int i = beg; i < last; i++)
-    if (*ci < profile[i])
-      *ci = profile[i];
-  first = MAX(end-2*K,beg);
-  for (int i = first; i < end; i++)
-    if (*cj < profile[i])
-      *cj = profile[i];
-
-#ifdef DEBUG_COR
-  fprintf(stderr,"@ (%d,%d-1) %d(=%d+%d), %d(=%d+%d)\n",beg,end,*ci,profile[beg],n_gain,*cj,profile[end-1],n_drop);
-#endif
-
-  return;
-}
-
-void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, P_Error *perror, P_Error *cerror, Error_Intvl *eintvl[N_ETYPE], Intvl *intvl, Rel_Intvl *rintvl, int *wall, char *asgn, const int K, int *_N, int *_M)
-{ int      N;
-  int      cng, e, w;
-  uint16   cin, cout;
-  int      maxt, maxl;
-  double   pe, maxpe;
-  int      eidx, ridx;
-
-  int THRES_R = 1000;   // TODO: calc from D-depth or seed selection
-
-  for (int i = 0; i < plen; i++)
-    { asgn[i] = 0;
-      for (e = SELF; e <= OTHERS; e++)
-        for (w = DROP; w <= GAIN; w++)
-          perror[i][e][w] = cerror[i][e][w] = 0.;
-    }
-
-  eidx = 0;
-  for (int i = 1; i < plen; i++)
-    { w = (profile[i-1] >= profile[i]) ? DROP : GAIN;
-      cng = abs((int)profile[i-1]-(int)profile[i]);
-
-      if (w == DROP)
-        { cin  = profile[i];
-          cout = profile[i-1];
-        }
-      else
-        { cin  = profile[i-1];
-          cout = profile[i];
-        }
-
-      maxt = -1, maxl = -1;
-      maxpe = 0.;
-      for (int t = HP; t <= TS; t++)
-        { int length = MIN(ctx[w][i][t],emodel[t].lmax);
-          pe = emodel[t].pe[length];
-          if (maxpe < pe)
-            { maxpe = pe;
-              maxt = t;
-              maxl = length;
-            }
-        }
-
-      int is_wall = 0;
-      if (cng <= MIN_CNT_CHANGE)
-        is_wall = 0;
-      else if (cng > MAX_CNT_CHANGE)
-        is_wall = 1;
-      else if (cout < CMAX && cin < MAX(emodel[maxt].cthres[maxl][cout][INIT][SELF],emodel[maxt].cthres[maxl][cout][INIT][OTHERS]))
-        is_wall = 1;
-      if (MIN(profile[i-1],profile[i]) >= THRES_R)
-        is_wall = 0;
-
-      if (is_wall == 0)   // Not a wall candidate
-        continue;
-
-      asgn[i] = 1;   // TODO: check if this is OK? is_wall <==> asgn=1
-
-      if (perror[i][SELF][w] == 0.)
-        { //perror[i][SELF][w] = (cout <= CMAX) ? emodel[maxt].pe_bt[maxl][CIDX(cout,cin)] : binom_test_g(cin,cout,maxpe,0);
-          perror[i][SELF][w] = binom_test_g(cin,cout,maxpe,0);
-        }
-      if (perror[i][OTHERS][w] == 0.)
-        { //perror[i][OTHERS][w] = (cout <= CMAX) ? emodel[maxt].pe_bt[maxl][CIDX(cout,cout-cin)] : binom_test_g(cout-cin,cout,maxpe,0);
-          perror[i][OTHERS][w] = binom_test_g(cout-cin,cout,maxpe,0);
-        }
-
-#ifdef DEBUG_ERROR
-      const char _type = (profile[i-1] == profile[i]) ? '=' : ((profile[i-1] > profile[i]) ? '>' : '<');
-      fprintf(stderr,"@ %d -> %d: %d -> %d (%c)",i-1,i,profile[i-1],profile[i],_type);
-      
-      for (int d = 0; d < 2; d++)
-        { fprintf(stderr,"%s(",(d==0) ? "  L" : "  R");
-          for (int t = 0; t < 3; t++)
-            fprintf(stderr,"%d%c",ctx[d][i][t],(t<2) ? ',' : ')');
-        }
-
-      if (is_wall)
-        { fprintf(stderr,"  (pe, ps, po) = (%lf, %lf, %lf)",maxpe,perror[i][SELF][w],perror[i][OTHERS][w]);
-          if (asgn[i])
-            fprintf(stderr," ***");
-        }
-      fprintf(stderr,"\n");
-#endif
-
-      if (perror[i][SELF][w] > PE_THRES[INIT][SELF] || perror[i][OTHERS][w] < PE_THRES[INIT][OTHERS])   // TODO: need this? init_thres are used in the count threshold precompute
-        { // asgn[i] = 1;
-
-          if (w == DROP)
-            { for (int n = 0; n <= MAX_N_HC; n++)
-                { int j = i-1+K+n;
-                  // if (j >= plen || profile[j-1]>profile[j])
-                  if (j >= plen || profile[j-1] >= profile[j])   // NOTE: experimental code to skip tie
-                    continue;
-                  maxpe = 0.;
-                  for (int t = 0; t < 3; t++)
-                    { int length = MIN(ctx[1-w][j][t],emodel[t].lmax);
-                      pe = emodel[t].pe[length];
-                      if (maxpe < pe)
-                        { maxpe = pe;
-                          maxt = t;
-                          maxl = length;
-                        }
-                    }
-                  if (perror[j][SELF][1-w] == 0.)
-                    { //perror[j][SELF][1-w] = (profile[j] <= CMAX) ? emodel[maxt].pe_bt[maxl][CIDX(profile[j],profile[j-1])] : binom_test_g(profile[j-1],profile[j],maxpe,0);
-                      perror[j][SELF][1-w] = binom_test_g(profile[j-1],profile[j],maxpe,0);
-                    }
-                  if (perror[j][OTHERS][1-w] == 0.)
-                    { //perror[j][OTHERS][1-w] = (profile[j] <= CMAX) ? emodel[maxt].pe_bt[maxl][CIDX(profile[j],profile[j]-profile[j-1])] : binom_test_g(profile[j]-profile[j-1],profile[j],maxpe,0);
-                      perror[j][OTHERS][1-w] = binom_test_g(profile[j]-profile[j-1],profile[j],maxpe,0);
-                    }
-                }
-
-              check_drop(i,profile,plen,ctx,emodel,perror,eintvl,eidx,K);
-            }
-          else
-            { for (int n = 0; n <= MAX_N_HC; n++)
-                { int j = i+1-K-n;
-                  // if (j <= 0 || profile[j-1]<profile[j])
-                  if (j <= 0 || profile[j-1] <= profile[j])   // NOTE: experimental code to skip tie
-                    continue;
-                  maxpe = 0.;
-                  for (int t = 0; t < 3; t++)
-                    { int length = MIN(ctx[1-w][j][t],emodel[t].lmax);
-                      pe = emodel[t].pe[length];
-                      if (maxpe < pe)
-                        { maxpe = pe;
-                          maxt = t;
-                          maxl = length;
-                        }
-                    }
-                  if (perror[j][SELF][1-w] == 0.)
-                    { //perror[j][SELF][1-w] = (profile[j-1] <= CMAX) ? emodel[maxt].pe_bt[maxl][CIDX(profile[j-1],profile[j])] : binom_test_g(profile[j],profile[j-1],maxpe,0);
-                      perror[j][SELF][1-w] = binom_test_g(profile[j],profile[j-1],maxpe,0);
-                    }
-                  if (perror[j][OTHERS][1-w] == 0.)
-                    { //perror[j][OTHERS][1-w] = (profile[j-1] <= CMAX) ? emodel[maxt].pe_bt[maxl][CIDX(profile[j-1],profile[j-1]-profile[j])] : binom_test_g(profile[j-1]-profile[j],profile[j-1],maxpe,0);
-                      perror[j][OTHERS][1-w] = binom_test_g(profile[j-1]-profile[j],profile[j-1],maxpe,0);
-                    }
-                }
-
-              check_gain(i,profile,ctx,emodel,perror,eintvl,eidx,K);
-            }
-          eidx++;
-        }
-    }
-
-#ifdef DEBUG_INTVL
-  const char etoc[2] = {'S', 'O'};
-  fprintf(stderr,"# of intervals inspected = %d\n",eidx);
-  for (int i = 0; i < eidx; i++)
-    { for (int e = SELF; e <= OTHERS; e++)
-        { double _pe = eintvl[e][i].pe;
-          if (_pe < PE_THRES[FINAL][e])
-            continue;
-          
-          int beg = eintvl[e][i].i;
-          int end = eintvl[e][i].j;
-
-          fprintf(stderr,"%c (%d,%d) (",etoc[e],beg,end);
-          for (int t = HP; t <= TS; t++)
-            fprintf(stderr,"%d%c",ctx[DROP][beg][t],(t<2) ? ',' : ')');
-          fprintf(stderr,"-(");
-          for (int t = HP; t <= TS; t++)
-            fprintf(stderr,"%d%c",ctx[GAIN][end][t],(t<2) ? ',' : ')');
-          fprintf(stderr," [%d|%d->%d|%d] %lf   \n",profile[beg-1],profile[beg],profile[end-1],profile[end],_pe);
-        }
-    }
-#endif
-
-  // TODO: use wall from the beginning?
-  // Repeat counts cannot be walls
-  THRES_R = lambda_prior[1] + 6*(int)sqrt(lambda_prior[1]);
-  for (int i = 1; i < plen; i++)
-    if (asgn[i] == 1 && MIN(profile[i-1],profile[i]) >= THRES_R)
-      asgn[i] = 0;
-  // Exclude walls that can be explained by errors in others
-  e = OTHERS;
-  for (int i = 0; i < eidx; i++)
-    if (eintvl[e][i].pe >= PE_THRES[FINAL][e])
-      asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 0;
-  // Include walls that can be explained by errors in self
-  // e = SELF;
-  // for (int i = 0; i < eidx; i++)
-  //   if (eintvl[e][i].pe >= pethres[e])
-  //     asgn[eintvl[e][i].i] = asgn[eintvl[e][i].j] = 1;
-
-  // Concatenate adjacent error intervals
-  bool is_error[plen];
-  for (int i = 0; i < plen; i++)
-    is_error[i] = false;
-  for (int i = 0; i < eidx; i++)
-    if (eintvl[SELF][i].pe >= PE_THRES[FINAL][SELF])
-      { //fprintf(stderr,"Eintvl[%d] = (%d,%d)\n",i,eintvl[SELF][i].i,eintvl[SELF][i].j);
-        for (int j = eintvl[SELF][i].i; j < eintvl[SELF][i].j; j++)
-          is_error[j] = true;
-      }
-  for (int i = 1; i < plen; i++)
-    if (is_error[i-1] != is_error[i])
-      asgn[i] = 1;
-    else if (is_error[i-1] && is_error[i])
-      asgn[i] = 0;
-
-  // Store logp error in self considering the pair, for each interval
-  double pe_i[plen+1], pe_j[plen+1];
-  for (int i = 0; i < plen+1; i++)
-    { pe_i[i] = pe_j[i] = -INFINITY;
-    }
-  for (int i = 0; i < eidx; i++)
-    { // fprintf(stderr,"*** %d (%d,%d)=%lf\n",i,eintvl[SELF][i].i,eintvl[SELF][i].j,eintvl[SELF][i].pe);
-      pe_i[eintvl[SELF][i].i] = MAX(pe_i[eintvl[SELF][i].i], log(eintvl[SELF][i].pe));
-      pe_j[eintvl[SELF][i].j] = MAX(pe_i[eintvl[SELF][i].j], log(eintvl[SELF][i].pe));
-    }
-
-  // Wall positions
-  N = 0;   // # of intervals (N+1 is the length of `wall`)
-  wall[N++] = 0;
-  for (int i = 1; i < plen; i++)
-    if (asgn[i] == 1)
-      wall[N++] = i;
-  wall[N] = plen;
-
-#ifdef DEBUG_INTVL
-  fprintf(stderr,"List of wall positions:\n    ");
-  for (int i = 1; i < N; i++)
-    fprintf(stderr,"%d ",wall[i]);
+#ifdef DEBUG_WALL
   fprintf(stderr,"\n");
 #endif
 
-  // Mask error positions
-  for (int i = 1; i < N; i++)
-    asgn[wall[i]] = 0;
-  e = SELF;
-  for (int i = 0; i < eidx; i++)
-    if (eintvl[e][i].pe >= PE_THRES[FINAL][e])
-      for (int j = eintvl[e][i].i; j < eintvl[e][i].j; j++)
-        asgn[j] = 1;
-  
-  // Find reliable intervals and correct counts
-  ridx = 0;
-  int iidx = 0;
-  for (int i = 0; i < N; i++)
-    { int beg = wall[i];
-      int end = wall[i+1];
-      bool is_rel = false;
-      bool is_err = false;
-
-      // Reliable intervals must be long and not explained by errors in others
-      if (asgn[beg] == 1 || asgn[end-1] == 1)
-        { is_err = true;
-        }
-      else if (end-beg >= K)
-        { int ci, cj;
-          correct_wall_cnt(beg,end,&ci,&cj,profile,ctx,K);
-          double _lambda = (double)(ci+cj)/2*(end-beg)/20000;
-          double logp_sk = logp_skellam(ci-cj,_lambda);
-
-#ifdef DEBUG_INTVL
-          fprintf(stderr,"(%d,%d) [%d, %d] Psk=%lf",beg,end,ci,cj,exp(logp_sk));
-#endif
-
-          // Transition between wall counts can be explained by sampling fluctuation
-          if (logp_sk >= -9.21)   // 0.0001
-            { 
-#ifdef DEBUG_INTVL
-              fprintf(stderr,"   Reliable");
-#endif
-              
-              is_rel = true;
-              rintvl[ridx].i = beg;   // TODO: change to `b` and `e`?
-              rintvl[ridx].j = end;
-              rintvl[ridx].ci = ci;
-              rintvl[ridx].cj = cj;   // TODO: change to `cjm1`?
-              ridx++;
-
-              if (beg > 0)
-                { if (profile[beg-1] == ci)
-                    { cerror[beg][SELF][DROP] = cerror[beg][SELF][GAIN] = 0.;
-                      cerror[beg][OTHERS][DROP] = cerror[beg][OTHERS][GAIN] = 1.;
-                    }
-                  else
-                    { w = (profile[beg-1] > ci) ? DROP : GAIN;
-                      if (w == DROP)
-                        { cin  = ci;
-                          cout = profile[beg-1];
-                        }
-                      else
-                        { cin  = profile[beg-1];
-                          cout = ci;
-                        }
-                      maxt = -1, maxl = -1;
-                      maxpe = 0.;
-                      for (int t = HP; t <= TS; t++)
-                        { int length = MIN(ctx[w][beg][t],emodel[t].lmax);
-                          pe = emodel[t].pe[length];
-                          if (maxpe < pe)
-                            { maxpe = pe;
-                              maxt = t;
-                              maxl = length;
-                            }
-                        }
-                      cerror[beg][SELF][w] = binom_test_g(cin,cout,maxpe,0);
-                      cerror[beg][OTHERS][w] = binom_test_g(cout-cin,cout,maxpe,0);
-                    }
-                }
-
-              if (end < plen)
-                { if (cj == profile[end])
-                    { cerror[end][SELF][DROP] = cerror[end][SELF][GAIN] = 0.;
-                      cerror[end][OTHERS][DROP] = cerror[end][OTHERS][GAIN] = 1.;
-                    }
-                  else
-                    { w = (cj > profile[end]) ? DROP : GAIN;
-                      if (w == DROP)
-                        { cin  = profile[end];
-                          cout = cj;
-                        }
-                      else
-                        { cin  = cj;
-                          cout = profile[end];
-                        }
-                      maxt = -1, maxl = -1;
-                      maxpe = 0.;
-                      for (int t = HP; t <= TS; t++)
-                        { int length = MIN(ctx[w][end][t],emodel[t].lmax);
-                          pe = emodel[t].pe[length];
-                          if (maxpe < pe)
-                            { maxpe = pe;
-                              maxt = t;
-                              maxl = length;
-                            }
-                        }
-                      cerror[end][SELF][w] = binom_test_g(cin,cout,maxpe,0);
-                      cerror[end][OTHERS][w] = binom_test_g(cout-cin,cout,maxpe,0);
-                    }
-                }
-            }
-#ifdef DEBUG_INTVL
-              fprintf(stderr,"\n");
-#endif
-        }
-
-      intvl[iidx].i = beg;
-      intvl[iidx].j = end;
-      intvl[iidx].logpe_i = pe_i[beg];
-      intvl[iidx].logpe_j = pe_j[end];
-      // fprintf(stderr,"PeS=(%lf,%lf)\n",pe_i[beg],pe_j[end]);
-      intvl[iidx].is_rel = is_rel;
-      intvl[iidx].is_err = is_err;
-      intvl[iidx].asgn = (is_err) ? ERROR : N_STATE;
-      iidx++;
+  for (int i = 0; i < plen; i++)
+    { wall[i] = 0;
+      for (int e = SELF; e <= OTHERS; e++)
+        for (int w = DROP; w <= GAIN; w++)
+          perror[i][e][w] = -INFINITY;
     }
 
-  *_N = N;
-  *_M = ridx;
+  uint8 ct[N_THRES];
+  int eidx = 0, oidx = 0;
+  for (int i = 1; i < plen; i++)
+    { // Determine wall type and set cout/cin
+      cnt_t cim1 = profile[i-1];
+      cnt_t ci   = profile[i];
+      if (MIN(cim1,ci) >= GLOBAL_COV[REPEAT])
+        continue;
+
+      uint16 cng = abs((int)cim1-ci);
+      if (cng < MIN_CNT_CHANGE)
+        continue;
+
+      enum Wtype wtype;
+      cnt_t      cin, cout;
+      if (cim1 > ci)
+        { wtype = DROP;
+          cin   = ci;
+          cout  = cim1;
+        }
+      else
+        { wtype = GAIN;
+          cin   = cim1;
+          cout  = ci;
+        }
+
+      // Determine low-complexity sequence context type
+      int    maxt = -1, maxl = -1;
+      double pe, maxpe = -INFINITY;
+      for (int t = HP; t <= TS; t++)
+        { int l = MIN(ctx[wtype][i][t],emodel[t].lmax);
+          pe = emodel[t].pe[l];
+          if (maxpe < pe)
+            { maxpe = pe;
+              maxt  = t;
+              maxl  = l;
+            }
+        }
+
+      for (int e = SELF; e <= OTHERS; e++)
+        { if (is_paired(e, wall, i))
+            continue;
+          
+          // Load precomputed count thresholds if available
+          if (cout < CMAX)
+            { for (int s = INIT; s <= FINAL; s++)
+                ct[s] = emodel[maxt].cthres[maxl][cout][s][e];   // TODO: change to cthres[...][e][s] ?
+              if (!(cng > MAX_CNT_CHANGE || cin < MAX(ct[INIT],3)))
+                continue;
+            }
+          
+          // Check if the position is wall
+          if (e == SELF)
+            { if (cout < CMAX && cin >= ct[FINAL])   // Cannot be E-intvl
+                continue;
+              update_perror(perror,i,e,wtype,cout,cin,maxpe);
+              if (perror[i][e][wtype] < PE_THRES[FINAL][e])
+                continue;
+              if (find_pair(i,cout,cin,e,wtype,maxt,maxl,maxpe,perror,eintvl,&eidx,profile,plen,ctx,emodel,K))
+                { Error_Intvl I = eintvl[eidx];
+                  if (I.pe >= PE_THRES[FINAL][e])
+                    { set_wall_by(e,wall,I.b);
+                      set_wall_by(e,wall,I.e);
+                      set_paired(e,wall,I.b);
+                      set_paired(e,wall,I.e);
+                      eidx++;
+                    }
+                }
+              // TODO: need this?
+              // else
+              //   set_wall_by(e,wall,i);
+            }
+          else   // OTHERS
+            { if (cng >= GLOBAL_COV[HAPLO] || (cout < CMAX && cin < ct[FINAL]))
+                { set_wall_by(OTHERS,wall,i);
+                  continue;
+                }
+              update_perror(perror,i,e,wtype,cout,cin,maxpe);
+              if (perror[i][e][wtype] < PE_THRES[FINAL][e])   // Never paired
+                { set_wall_by(OTHERS,wall,i);
+                  continue;
+                }
+              if (find_pair(i,cout,cin,e,wtype,maxt,maxl,maxpe,perror,ointvl,&oidx,profile,plen,ctx,emodel,K))
+                { Error_Intvl I = ointvl[oidx];
+                  if (I.pe >= PE_THRES[FINAL][e])
+                    { set_paired(e,wall,I.b);
+                      set_paired(e,wall,I.e);
+                      oidx++;
+                      continue;
+                    }
+                }
+              set_wall_by(e,wall,i);
+            }
+        }
+
+// #ifdef DEBUG_WALL
+//       if (is_wall_by(SELF,wall,i) || is_wall_by(OTHERS,wall,i))
+//         { const char _type = (cim1 == ci) ? '=' : ((wtype == DROP) ? '>' : '<');
+//           fprintf(stderr,"@ %d -> %d: %d -> %d (%c) ctx=",i-1,i,cim1,ci,_type);
+//           for (int w = DROP; w <= GAIN; w++)
+//             { fprintf(stderr,"%s(",(w == DROP) ? "L" : " R");
+//               for (int t = HP; t <= TS; t++)
+//                 fprintf(stderr,"%d%c",ctx[w][i][t],(t < TS) ? ',' : ')');
+//             }
+//           fprintf(stderr," erate=%.3lf, (ps, po) = (%lf, %lf)\n",
+//                          maxpe,perror[i][SELF][wtype],perror[i][OTHERS][wtype]);
+//         }
+// #endif
+    }   // Loop for each position
+
+  int NS = eidx, NO = oidx;
+
+#ifdef DEBUG_WALL
+  int NS_init = NS, NO_init = NO;
+  // fprintf(stderr,"E-intvls (init=%d):\n",NS);
+  // for (int i = 0; i < NS; i++)
+  //   fprintf(stderr,"    (%d, %d) pe=%lf\n",eintvl[i].b,eintvl[i].e,eintvl[i].pe);
+  // fprintf(stderr,"O-intvls (init=%d):\n",NO);
+  // for (int i = 0; i < NO; i++)
+  //   fprintf(stderr,"    (%d, %d) pe=%lf\n",ointvl[i].b,ointvl[i].e,ointvl[i].pe);
+#endif
+
+  // From walls by non-O, exclude positions explained by O or within E-intvls
+  for (int i = 0; i < NO; i++)
+    { Error_Intvl I = ointvl[i];
+      unset_wall_by(OTHERS,wall,I.b);
+      unset_wall_by(OTHERS,wall,I.e);
+    }
+  for (int i = 0; i < NS; i++)
+    { Error_Intvl I = eintvl[i];
+      for (pos_t j = I.b+1; j < I.e; j++)
+        unset_wall_by(OTHERS,wall,j);
+    }
+
+  // Sort by position and remove duplicates
+  NS = remove_duplicates(eintvl,eidx);
+  NO = remove_duplicates(ointvl,oidx);
+
+#ifdef DEBUG_WALL
+  fprintf(stderr,"E-intvls (init=%d, uniq=%d):\n",NS_init,NS);
+  for (int i = 0; i < NS; i++)
+    fprintf(stderr,"    (%d, %d) pe=%lf\n",eintvl[i].b,eintvl[i].e,eintvl[i].pe);
+  fprintf(stderr,"O-intvls (init=%d, uniq=%d):\n",NO_init,NO);
+  for (int i = 0; i < NO; i++)
+    fprintf(stderr,"    (%d, %d) pe=%lf\n",ointvl[i].b,ointvl[i].e,ointvl[i].pe);
+#endif
+
+  // Find E-intvls by multiple errors and boundary E-intvls
+  int midx = NS;
+  int b, e;
+  double pe, pe_i, pe_j;
+  for (int i = 1; i < plen; i++)
+    { if (!(is_wall_by(OTHERS,wall,i) && !is_wall_by(SELF,wall,i)))
+        continue;
+      if (is_paired_mult(wall,i))
+        continue;
+      for (int w = DROP; w <= GAIN; w++)
+        { if ((pe_i = perror[i][SELF][w]) < PE_THRES[FINAL][SELF])
+            continue;
+          if (w == DROP)
+            { for (int j = i+1; j < MIN(i+200,plen+1); j++)
+                { if (j == plen)   // boundary E-intvl
+                    { if ((pe = pe_i * pe_i) < PE_THRES[FINAL][SELF])
+                        continue;
+                      b = i;
+                      e = plen;
+                      eintvl[midx].b = b;
+                      eintvl[midx].e = e;
+                      eintvl[midx].pe = pe;
+                      set_paired_mult(wall,i);
+                      midx++;
+#ifdef DEBUG
+                      if (midx >= plen)
+                        { fprintf(stderr,"# E-intvls >= plen\n");
+                          exit(1);
+                        }
+#endif
+                    }
+                  if (!is_wall_by(SELF,wall,j) && !is_wall_by(OTHERS,wall,j))
+                    continue;
+                  b = i;
+                  e = j;
+                  if (bs_eintvl(eintvl,0,NS,b,e) != -1)
+                    continue;
+                  pe_j = perror[j][SELF][GAIN];
+                  if ((pe = pe_i * pe_j) < PE_THRES[FINAL][SELF])
+                    continue;
+                  eintvl[midx].b = b;
+                  eintvl[midx].e = e;
+                  eintvl[midx].pe = pe;
+                  set_paired_mult(wall,i);
+                  set_paired_mult(wall,j);
+                  midx++;
+#ifdef DEBUG
+                  if (midx >= plen)
+                    { fprintf(stderr,"# E-intvls >= plen\n");
+                      exit(1);
+                    }
+#endif
+                  if (is_wall_by(OTHERS,wall,j))
+                    break;
+                }
+            }
+          else   // GAIN
+            { for (int j = i-1; j >= MAX(i-200,0); j--)
+                { if (j == 0)   // boundary E-intvl
+                    { if ((pe = pe_i * pe_i) < PE_THRES[FINAL][SELF])
+                        continue;
+                      b = 0;
+                      e = i;
+                      eintvl[midx].b = b;
+                      eintvl[midx].e = e;
+                      eintvl[midx].pe = pe;
+                      set_paired_mult(wall,i);
+                      midx++;
+#ifdef DEBUG
+                      if (midx >= plen)
+                        { fprintf(stderr,"# E-intvls >= plen\n");
+                          exit(1);
+                        }
+#endif
+                    }
+                  if (!is_wall_by(SELF,wall,j) && !is_wall_by(OTHERS,wall,j))
+                    continue;
+                  b = j;
+                  e = i;
+                  if (bs_eintvl(eintvl,0,NS,b,e) != -1)
+                    continue;
+                  pe_j = perror[j][SELF][DROP];
+                  if ((pe = pe_i * pe_j) < PE_THRES[FINAL][SELF])
+                    continue;
+                  eintvl[midx].b = b;
+                  eintvl[midx].e = e;
+                  eintvl[midx].pe = pe;
+                  set_paired_mult(wall,i);
+                  set_paired_mult(wall,j);
+                  midx++;
+#ifdef DEBUG
+                  if (midx >= plen)
+                    { fprintf(stderr,"# E-intvls >= plen\n");
+                      exit(1);
+                    }
+#endif
+                  if (is_wall_by(OTHERS,wall,j))
+                    break;
+                }
+            }
+        }
+    }
+#ifdef DEBUG_WALL
+  fprintf(stderr,"E-intvls (mult=%d):\n",midx-NS);
+  for (int i = NS; i < midx; i++)
+    fprintf(stderr,"    (%d, %d) pe=%lf\n",eintvl[i].b,eintvl[i].e,eintvl[i].pe);
+#endif
+
+  for (int i = NS; i < midx; i++)
+    { Error_Intvl I = eintvl[i];
+      for (pos_t j = I.b+1; j < I.e; j++)
+        unset_wall_by(OTHERS,wall,j);
+    }
+  if (NS < midx)
+    { NS = midx;
+      qsort(eintvl,NS,sizeof(Error_Intvl),compare_eintvl);
+    }
+
+  // Merge overlapping/contained E-intvls (original E-intvls are kept)
+  { int i = 0, j;
+    pos_t max_e;
+    double max_pe;
+    while (i < NS-1)
+      { max_e = eintvl[i].e;
+        max_pe = eintvl[i].pe;
+        j = i;
+        while(j < NS-1)
+          { if (eintvl[j+1].b <= eintvl[j].e)
+              { max_e = MAX(max_e,eintvl[j+1].e);
+                max_pe = MAX(max_pe,eintvl[j+1].pe);
+                j++;
+              }
+            else
+              break;
+          }
+        if (i < j)
+          { eintvl[NS].b = eintvl[i].b;
+            eintvl[NS].e = max_e;
+            eintvl[NS].pe = max_pe;
+            NS++;
+#ifdef DEBUG
+            if (NS >= plen)
+              { fprintf(stderr,"# E-intvls >= plen\n");
+                exit(1);
+              }
+#endif
+          }
+        i = j+1;
+      }
+  }
+  qsort(eintvl,NS,sizeof(Error_Intvl),compare_eintvl);
+
+// #ifdef DEBUG_WALL
+//   fprintf(stderr,"E-intvls (all=%d):\n",NS);
+//   for (int i = 0; i < NS; i++)
+//     fprintf(stderr,"    (%d, %d) pe=%lf\n",eintvl[i].b,eintvl[i].e,eintvl[i].pe);
+// #endif
+
+  for (int i = 0; i < NS; i++)
+    for (pos_t j = eintvl[i].b; j < eintvl[i].e; j++)
+      set_error(wall,j);
+
+  // Determine intervals
+  int _idx;
+  double peob, peoe;
+  int N = 0;
+  b = 0;
+  // set_wall(wall,0);
+  // set_wall(wall,plen);
+  for (int i = 1; i <= plen; i++)
+    if (i == plen || is_error(wall,i-1) != is_error(wall,i) || (!is_error(wall,i) && is_wall_by(OTHERS,wall,i)))
+      { // set_wall(wall,i);
+        e = i;
+        _idx = bs_eintvl(eintvl,0,NS,b,e);
+        intvl[N].b = b;
+        intvl[N].e = e;
+        intvl[N].cb = profile[b];
+        intvl[N].ce = profile[e-1];
+        intvl[N].is_rel = false;
+        intvl[N].pe = (_idx != -1) ? log(eintvl[_idx].pe) : -INFINITY;
+        peob = MAX(perror[b][OTHERS][DROP],perror[b][OTHERS][GAIN]);
+        peoe = MAX(perror[e][OTHERS][DROP],perror[e][OTHERS][GAIN]);
+        intvl[N].pe_o.b = (peob != -INFINITY) ? log(peob) : -INFINITY;
+        intvl[N].pe_o.e = (peoe != -INFINITY) ? log(peoe) : -INFINITY;
+        intvl[N].asgn = N_STATE;   // unclassified
+        N++;
+        b = e;
+      }
+
+#ifdef DEBUG_WALL
+  fprintf(stderr,"Intvls:\n");
+  for (int i = 0; i < N; i++)
+    fprintf(stderr,"    (%d, %d) pe_S=%lf, pe_O=(%lf, %lf)\n",
+                   intvl[i].b,intvl[i].e,intvl[i].pe,intvl[i].pe_o.b,intvl[i].pe_o.e);
+#endif
+
+  return N;
+}
+
+static void correct_wall_cnt(Intvl *intvl, int i, const uint16 *profile, Seq_Ctx *ctx[N_WTYPE], const int K)
+{ Intvl I = intvl[i];
+  pos_t first, last;
+  int n_gain = 0, n_drop = 0;
+  int lmax;
+
+  last = MIN(I.b+K-1,I.e-1);
+  for (pos_t i = I.b; i < last; i++)
+    n_gain += MAX((int)profile[i+1]-profile[i],0);
+  if (I.b+K-1 < I.e)
+    { lmax = 0;
+      for (int t = HP; t <= TS; t++)
+        { int l = ctx[GAIN][I.b+K-1][t]*(t+1);
+          if (lmax < l)
+            lmax = l;
+        }
+      last = I.b+lmax;
+      for (pos_t i = I.b; i < last; i++)
+        n_gain -= MAX((int)profile[i]-profile[i+1],0);
+    }
+  
+  first = MAX(I.e-K+1,I.b);
+  for (pos_t i = first; i < I.e-1; i++)
+    n_drop += MAX((int)profile[i]-profile[i+1],0);
+  if (I.b < I.e-K+1)
+    { lmax = 0;
+      for (int t = HP; t <= TS; t++)
+        { int l = ctx[DROP][I.e-K+1][t]*(t+1);
+          if (lmax < l)
+            lmax = l;
+        }
+      first = I.e-lmax;
+      for (pos_t i = first; i < I.e-1; i++)
+        n_drop -= MAX((int)profile[i+1]-profile[i],0);
+    }
+
+  intvl[i].ccb = MIN(I.cb+MAX(n_gain,0),MAX_KMER_CNT);
+  intvl[i].cce = MIN(I.ce+MAX(n_drop,0),MAX_KMER_CNT);
+
+  last = MIN(I.b+2*K,I.e);
+  for (pos_t i = I.b; i < last; i++)
+    if (intvl[i].ccb < profile[i])
+      intvl[i].ccb = MAX(intvl[i].ccb,profile[i]);
+  first = MAX(I.e-2*K,I.b);
+  for (pos_t i = first; i < I.e; i++)
+    if (intvl[i].cce < profile[i])
+      intvl[i].cce = profile[i];
+
+#ifdef DEBUG_COR
+  fprintf(stderr,"@ (%d,%d-1) %d(=%d+%d), %d(=%d+%d)\n",
+                 I.b,I.e,intvl[i].ccb,I.cb,n_gain,intvl[i].cce,I.ce,n_drop);
+#endif
+
   return;
+}
+
+int find_rel_intvl(Intvl *intvl, int N, Intvl *rintvl, cnt_t *profile, Seq_Ctx *ctx[N_WTYPE], int K)
+{ int M = 0;
+  double logpthres = log(PE_THRES[FINAL][SELF]);
+  for (int i = 0; i < N; i++)
+    { // Reliable intervals must be long and not explained by errors in others
+      if (intvl[i].e-intvl[i].b < (pos_t)K)
+        continue;
+      if (MAX(intvl[i].cb,intvl[i].ce) >= GLOBAL_COV[REPEAT])
+        continue;
+      if (intvl[i].pe >= logpthres)
+        continue;
+      correct_wall_cnt(intvl,i,profile,ctx,K);
+      if (logp_trans(intvl[i].b,intvl[i].e,intvl[i].ccb,intvl[i].cce,
+                     (intvl[i].ccb+intvl[i].cce)/2) < THRES_DIFF_REL)
+        continue;
+      intvl[i].is_rel = true;
+      rintvl[M] = intvl[i];
+      M++;
+    }
+#ifdef DEBUG_COR
+  fprintf(stderr,"Intvls (#=%d):\n",N);
+  for (int i = 0; i < N; i++)
+    fprintf(stderr,"    (%d, %d): c=(%d, %d), cc=(%d, %d), pe_S=%lf, pe_O=(%lf, %lf)\n",
+                   intvl[i].b,intvl[i].e,intvl[i].cb,intvl[i].ce,intvl[i].ccb,intvl[i].cce,
+                   intvl[i].pe,intvl[i].pe_o.b,intvl[i].pe_o.e);
+  fprintf(stderr,"Rel Intvls (#=%d):\n",M);
+  for (int i = 0; i < M; i++)
+    fprintf(stderr,"    (%d, %d): c=(%d, %d), cc=(%d, %d), pe_S=%lf, pe_O=(%lf, %lf)\n",
+                   rintvl[i].b,rintvl[i].e,rintvl[i].cb,rintvl[i].ce,rintvl[i].ccb,rintvl[i].cce,
+                   rintvl[i].pe,rintvl[i].pe_o.b,rintvl[i].pe_o.e);
+#endif
+  return M;
 }

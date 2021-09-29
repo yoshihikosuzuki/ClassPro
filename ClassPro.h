@@ -13,27 +13,26 @@
 #undef WRITE_TRACK   // Output DAZZ track of classifications as well
 #undef DO_PMM
 
-#define DEBUG_SINGLE   // Single-read mode. No files are output
+#undef DEBUG_SINGLE   // Single-read mode. No files are output
 #define DEBUG_SINGLE_ID 55   // Read ID in single-read mode
 // Never output DAZZ track in single-read mode
 #ifdef DEBUG_SINGLE
 #undef WRITE_TRACK
 #endif
 
-#define DEBUG
-#define DEBUG_ITER
-#undef DEBUG_BINOM
-#define DEBUG_EMODEL
-#undef DEBUG_CTX
-#undef DEBUG_ERROR
-#undef DEBUG_INTVL
-#undef DEBUG_COR
-#undef DEBUG_PMM
-#undef DEBUG_PROB
-#undef DEBUG_DP
-#undef DEBUG_REL
-#undef DEBUG_UNREL
-#undef DEBUG_SLIP
+// #define DEBUG
+// #define DEBUG_ITER
+// #undef DEBUG_BINOM
+// #undef DEBUG_EMODEL
+// #undef DEBUG_CTX
+// #undef DEBUG_WALL
+// #undef DEBUG_INTVL
+// #undef DEBUG_COR
+// #undef DEBUG_PMM
+// #undef DEBUG_PROB
+// #define DEBUG_REL
+// #undef DEBUG_UNREL
+// #undef DEBUG_SLIP
 
 /*******************************************************************************************
  *
@@ -48,10 +47,11 @@
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
-#define THREAD pthread_t
-
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
+
+typedef int    pos_t;
+typedef uint16 cnt_t;
 
 enum State { ERROR, REPEAT, HAPLO, DIPLO, N_STATE };
 enum Ctype { HP, DS, TS, N_CTYPE };
@@ -78,7 +78,7 @@ extern bool  VERBOSE;
 extern int   READ_LEN;
 extern bool  IS_DB;
 extern bool  IS_DAM;
-extern int   GLOBAL_COV[N_STATE];
+extern cnt_t GLOBAL_COV[N_STATE];
 
 /*******************************************************************************************
  *
@@ -92,7 +92,15 @@ void precompute_digamma();
 
 void process_global_hist(char *FK_ROOT, int COVERAGE);
 
-int pmm_vi(uint16 *profile, uint16 *nprofile, int plen, double *eta, double lambda[2]);
+typedef struct
+  { cnt_t  *nprofile;   // Normal counts for PMM
+    double *eta;
+  } PMM_Arg;
+
+PMM_Arg *alloc_pmm_arg(int rlen_max);
+void free_pmm_arg(PMM_Arg *arg);
+
+int pmm_vi(PMM_Arg *arg, cnt_t *profile, int plen, double lambda[2]);
 
 /*******************************************************************************************
  *
@@ -106,7 +114,7 @@ void calc_seq_context(Seq_Ctx *lctx, Seq_Ctx *rctx, char *seq, const int rlen);
 
 /*******************************************************************************************
  *
- *  Error model (emodel.c)
+ *  Wall detection with adaptive error model (wall.c)
  *
  ********************************************************************************************/
 
@@ -115,23 +123,16 @@ enum ThresT { INIT, FINAL, N_THRES };
 extern const int    MAX_N_LC;
 extern const double PE_THRES[N_THRES][N_ETYPE];
 
-extern int CMAX;   // Max cout for precomputation of count thresholds
+// extern uint8 CMAX;   // Max cout for precomputation of count thresholds
 
 typedef struct
   { uint8      lmax;   // Maximum feature length considered
     double    *pe;         // Error probability given feature length
-    uint8  ****cthres;     // Threshold of count change; emodel[ctype].cthres[l][cout][thresT][etype] = cin threshold  // TODO: better order?
+    uint8  ****cthres;     // Threshold of count change; emodel[ctype].cthres[l][cout][thresT][etype] = cin threshold  // TODO: better order? define outside Error_Model?
   } Error_Model;
 
 Error_Model *calc_init_thres();
-
 void free_emodel(Error_Model *emodel);
-
-/*******************************************************************************************
- *
- *  Wall/Interval detection with error probability (wall.c)
- *
- ********************************************************************************************/
 
 extern const int    MAX_N_HC;
 extern const int    MIN_CNT_CHANGE;
@@ -141,37 +142,46 @@ extern const double THRES_DIFF_REL;
 
 typedef double P_Error[N_ETYPE][N_WTYPE];
 
+//typedef Error_Intvl Error_Intvls[N_ETYPE];
+
 typedef struct
-  { int    i;
-    int    j;
+  { double b;
+    double e;
+  } Perror_O;
+
+typedef struct
+  { pos_t  b;
+    pos_t  e;
     double pe;
   } Error_Intvl;
 
-//typedef Error_Intvl Error_Intvls[N_ETYPE];
-
-// TODO: function polymorphism for Intvl and Rel_Intvl?
 typedef struct
-  { int    i;
-    int    j;
-    double logpe_i;   // error in self by check_drop at i
-    double logpe_j;   // error in self by check_gain at j
-    bool   is_rel;   // hard assignment of reliable intervals
-    bool   is_err;   // hard assignment of erroneous intervals
-    char   asgn;
+  { pos_t    b;
+    pos_t    e;
+    cnt_t    cb;
+    cnt_t    ce;
+    cnt_t    ccb;
+    cnt_t    cce;
+    bool     is_rel;   // hard assignment of reliable intervals
+    double   pe;     // TODO: logp?
+    Perror_O pe_o;
+    char     asgn;
   } Intvl;
 
 typedef struct
-  { int    i;
-    int    j;
-    int    ci;   // corrected counts
-    int    cj;   // @ j-1
-    char   asgn;
-  } Rel_Intvl;
+  { char        *wall;
+    Error_Intvl *eintvl;
+    Error_Intvl *ointvl;
+    P_Error     *perror;   // perror[i][etype][wtype]
+  } Wall_Arg;
 
-void find_wall(const uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE],
-               Error_Model *emodel, P_Error *perror, P_Error *cerror,
-               Error_Intvl *eintvl[N_ETYPE], Intvl *intvl, Rel_Intvl *rintvl,
-               int *wall, char *asgn, const int K, int *_N, int *_M);
+Wall_Arg *alloc_wall_arg(int rlen_max);
+void free_wall_arg(Wall_Arg *arg);
+
+int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
+               Seq_Ctx *ctx[N_WTYPE], Error_Model *emodel, int K);
+
+int find_rel_intvl(Intvl *intvl, int N, Intvl *rintvl, cnt_t *profile, Seq_Ctx *ctx[N_WTYPE], int K);
 
 /*******************************************************************************************
  *
@@ -183,14 +193,36 @@ extern const int    OFFSET;
 extern const int    N_SIGMA_R;
 extern const double R_LOGP;
 extern const double E_PO_BASE;
+extern const double PE_MEAN;
 
-void classify_reliable(Rel_Intvl *rintvl, int M, Intvl *intvl, int N, int plen,
-                       P_Error *perror, P_Error *cerror, int hcov, int dcov);
+extern double DR_RATIO;
 
-void classify_unreliable(uint16 *profile, int plen, Intvl *intvl, int N,
-                         P_Error *perror, int hcov, int dcov);
+typedef struct
+  { pos_t pos;
+    cnt_t cnt;
+  } Pos_Cnt;
 
-void remove_slip(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], char *crack);
+typedef Pos_Cnt CovsT[N_STATE];
+
+#define REL_IDX(i, s) (i)*N_STATE+(s)
+
+typedef struct
+  { bool     FORWARD;
+    cnt_t   *COV;
+    double  *dp;
+    CovsT   *st;
+    char   **bt;
+    double  *dh_ratio;
+    bool    *rpos;
+    Intvl   *intvl;
+  } Rel_Arg;
+
+Rel_Arg *alloc_rel_arg(int rlen_max);
+void free_rel_arg(Rel_Arg *arg, int rlen_max);
+
+void classify_rel(Rel_Arg *arg, Intvl *rintvl, int M, Intvl *intvl, int N, int plen);
+void classify_unrel(Intvl *intvl, int N);
+// void remove_slip(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], char *crack);
 
 /*******************************************************************************************
  *
@@ -241,17 +273,17 @@ extern const Out_Info O_INFO[N_OTYPE];
 typedef struct
   { int    verbose;      // `-v` option
     int    nthreads;     // `-T` option
-    int    cov;          // `-c` option
     int    rlen;         // `-r` option
-    bool   find_seeds;   // `-s` option
+    cnt_t  cov;          // `-c` option
     int    nreads;       // Total number of reads in all input files
     int    nparts;       // Number of reads per thread
+    int    nfiles;       // Length of `snames`
+    char **snames;       // `<source>`; List of input sequence file names
     char  *tmp_path;     // `-P` option
     char  *fk_root;      // `-N` option
-    char **snames;       // `<source>`; List of input sequence file names
-    int    nfiles;       // Length of `snames`
     bool   is_db;        // .db or .dam input?
     bool   is_dam;       // .dam?
+    bool   find_seeds;   // `-s` option
   } Arg;
 
 // Arguments for merging intermediate output files (defined for each `Otype`)
@@ -263,7 +295,6 @@ typedef struct
   } Merge_Arg;
 
 void prepare_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm);
-
 void free_param(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm);
 
 void *merge_anno(void *arg);

@@ -41,7 +41,7 @@ void process_global_hist(char *FK_ROOT, int COVERAGE)
     fprintf(stderr,"Global histogram inspection:\n");
 
   // Find H/D peaks (= mean depths)
-  if (COVERAGE != -1)
+  if (COVERAGE > 0)
     { lambda_prior[1] = COVERAGE;
       lambda_prior[0] = COVERAGE >> 1;
       if (VERBOSE)
@@ -141,9 +141,26 @@ void process_global_hist(char *FK_ROOT, int COVERAGE)
 
   Free_Histogram(H);
 }
- 
-int pmm_vi(uint16 *profile, uint16 *nprofile, int plen, double *eta, double lambda[2])
-{ int    N;   // # of normal counts, = length of `nprofile` and `eta`/2
+
+PMM_Arg *alloc_pmm_arg(int rlen_max)
+{ PMM_Arg *arg  = Malloc(sizeof(PMM_Arg),"Allocating PMM arg");
+  arg->nprofile = Malloc(rlen_max*sizeof(cnt_t),"Normal count profile array");
+  arg->eta      = Malloc(rlen_max*2*sizeof(double),"PMM eta");
+  return arg;
+}
+
+void free_pmm_arg(PMM_Arg *arg)
+{ free(arg->nprofile);
+  free(arg->eta);
+  free(arg);
+  return;
+}
+
+int pmm_vi(PMM_Arg *arg, cnt_t *profile, int plen, double lambda[2])
+{ cnt_t  *nprofile = arg->nprofile;
+  double *eta      = arg->eta;
+
+  int    N;   // # of normal counts, = length of `nprofile` and `eta`/2
   int    is_converged;
   double a[2], b[2], alpha[2], eta_weight_k[2], eta_const_k[2];
   double eta_sum, dg_sum_alpha;

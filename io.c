@@ -298,6 +298,7 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
     }
 #endif   // PARALLEL_WRITE
 
+#if !defined(DEBUG_SINGLE) && defined(WRITE_TRACK)
   // Write header info to .anno.1
   { const int idx  = 0;
     const int size = 8;
@@ -305,6 +306,7 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
     fwrite(&size,sizeof(int),1,paramc[0].afile);
     fwrite(&idx,sizeof(int64),1,paramc[0].afile);
   }
+#endif
 
   return;
 }

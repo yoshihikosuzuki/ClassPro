@@ -8,7 +8,7 @@ GENE_LIBS_C = libfastk.c DB.c QV.c
 
 all: $(ALL)
 
-ClassPro: ClassPro.c ClassPro.h const.c io.c util.c prob.c hist.c emodel.c context.c wall.c class_rel.c class_unrel.c kseq.h bessel.c bessel.h $(GENE_LIBS)
+ClassPro: ClassPro.c ClassPro.h const.c io.c util.c prob.c hist.c context.c wall.c class_rel.c class_unrel.c kseq.h bessel.c bessel.h $(GENE_LIBS)
 	$(CC) $(CFLAGS) -o $@ ClassPro.c $(GENE_LIBS_C) $(LDFLAGS)
 
 ClassGS: ClassGS.c $(GENE_LIBS)
