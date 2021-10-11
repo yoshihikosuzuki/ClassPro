@@ -31,18 +31,18 @@ int main(int argc, char *argv[])
 { Profile_Index *P;
   
   // fastx
-  gzFile      fxfp;
-  kseq_t     *fxseq;
+  gzFile      fxfp = NULL;
+  kseq_t     *fxseq = NULL;
 
   // dazz_db
   DAZZ_DB    _db, *db = &_db;
-  DAZZ_READ  *r;
+  DAZZ_READ  *r = NULL;
   DAZZ_STUB  *stub = NULL;
-  char      **flist;
-  int        *findx;
+  char      **flist = NULL;
+  int        *findx = NULL;
   int         map;
   FILE       *hdrs = NULL;
-  char       *hdrs_name = NULL;
+  char       *hdrs_name = "";
 
   FILE       *cfile;
   
@@ -158,7 +158,7 @@ int main(int argc, char *argv[])
     uint16 *profile;
     int     pmax, plen;
     int     rlen, rlen_max;
-    char   *seq;
+    char   *seq = NULL;
     char   *buf;
     char    header[MAX_NAME];
 

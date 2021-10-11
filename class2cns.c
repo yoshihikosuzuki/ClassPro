@@ -23,7 +23,6 @@ int main(int argc, char *argv[])
   
   { int    i, j, k;
     int    flags[128];
-    char  *eptr;
     (void) flags;
 
     ARG_INIT("class2cns");

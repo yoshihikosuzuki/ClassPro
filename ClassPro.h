@@ -7,19 +7,22 @@
  *
  ********************************************************************************************/
 
-#define DUP_PROFILE     // Create a distinct profile instance per thread  // TODO: clone
-#undef PARALLEL_WRITE   // Experimental mode of parallel write to .class file   // NOTE: currently unavailable for macOS
-// #define NREAD_PWRITE 100   // Number of reads per write in parallel-write mode
+/* --- Developmental or experimental modes --- */
+#undef DUP_PROFILE     // Create a distinct profile instance per thread
+#undef PARALLEL_WRITE   // Experimental mode of parallel write to .class (currently only for Linux)
+const int NREAD_PWRITE = 100;   // Number of reads per write in parallel-write mode
 #undef WRITE_TRACK   // Output DAZZ track of classifications as well
-#undef DO_PMM
+#undef DO_PMM   // Per-read H/D-cov estimation
 
+/* --- Debug modes --- */
 #undef DEBUG_SINGLE   // Single-read mode. No files are output
-#define DEBUG_SINGLE_ID 55   // Read ID in single-read mode
+const int DEBUG_SINGLE_ID = 55;   // Read ID in single-read mode
 // Never output DAZZ track in single-read mode
 #ifdef DEBUG_SINGLE
 #undef WRITE_TRACK
 #endif
 
+/* --- Debug flags --- */
 // #define DEBUG
 // #define DEBUG_ITER
 // #undef DEBUG_BINOM

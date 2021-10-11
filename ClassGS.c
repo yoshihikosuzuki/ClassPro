@@ -19,11 +19,11 @@ int main(int argc, char *argv[])
   // NOTE: Only DAZZ_DB is accepted for now
   DAZZ_DB    _db, *db = &_db;
   DAZZ_STUB  *stub = NULL;
-  char      **flist;
-  int        *findx;
+  char      **flist = NULL;
+  int        *findx = NULL;
   int         map;
   FILE       *hdrs = NULL;
-  char       *hdrs_name = NULL;
+  char       *hdrs_name = "";
   bool        is_dam;
 
   FILE       *cfile;
