@@ -683,7 +683,7 @@ Iter_Rel classify_rel_fw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
     }
   int d_diff = (first_d_idx >= 0) ? abs(rintvl[first_d_idx].ccb-rintvl[last_d_idx].cce) : 0;
   int h_diff = (first_h_idx >= 0) ? abs(rintvl[first_h_idx].ccb-rintvl[last_h_idx].cce) : 0;
-  double hdrr = (first_d_idx >= 0 && first_h_idx >= 0) ? ((double)rintvl[first_d_idx].ccb/rintvl[first_h_idx].ccb)/((double)rintvl[last_d_idx].cce/rintvl[last_h_idx].cce) : 1.;
+  double hdrr = (first_d_idx >= 0 && first_h_idx >= 0) ? ((double)rintvl[first_d_idx].ccb/rintvl[first_h_idx].ccb)/((double)rintvl[last_d_idx].cce/rintvl[first_h_idx].cce) : 1.;
 
   Iter_Rel ret = { asgn, d_diff, h_diff, hdrr };
   return ret;
@@ -754,7 +754,7 @@ Iter_Rel classify_rel_bw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
     }
   int d_diff = (first_d_idx >= 0) ? abs(rintvl[first_d_idx].ccb-rintvl[last_d_idx].cce) : 0;
   int h_diff = (first_h_idx >= 0) ? abs(rintvl[first_h_idx].ccb-rintvl[last_h_idx].cce) : 0;
-  double hdrr = (first_d_idx >= 0 && first_h_idx >= 0) ? ((double)rintvl[first_d_idx].ccb/rintvl[first_h_idx].ccb)/((double)rintvl[last_d_idx].cce/rintvl[last_h_idx].cce) : 1;
+  double hdrr = (first_d_idx >= 0 && first_h_idx >= 0) ? ((double)rintvl[first_d_idx].ccb/rintvl[first_h_idx].ccb)/((double)rintvl[last_d_idx].cce/rintvl[first_h_idx].cce) : 1;
 
   Iter_Rel ret = { asgn, d_diff, h_diff, hdrr };
   return ret;
@@ -766,6 +766,9 @@ void classify_rel(Rel_Arg *arg, Intvl *rintvl, int M, Intvl *intvl, int N, int p
 
   Iter_Rel cr_f = classify_rel_fw(arg,rintvl,M,plen);
 #ifdef DEBUG_REL
+#ifdef DEBUG_ITER
+  fprintf(stderr,"\n");
+#endif
   fprintf(stderr,"  FWD : ");
   for (int i = 0; i < M; i++)
     fprintf(stderr,"%c",stoc[(int)cr_f.asgn[i]]);
@@ -783,14 +786,16 @@ void classify_rel(Rel_Arg *arg, Intvl *rintvl, int M, Intvl *intvl, int N, int p
     fprintf(stderr,"%c",stoc[(int)cr_b.asgn[i]]);
   fprintf(stderr,"\n");
   fflush(stderr);
+
+  fprintf(stderr,"hdrr FWD=%lf, BWD=%lf\n",cr_f.hdrr,cr_b.hdrr);
 #endif
 
-  // if (fabs(cr_f.hdrr-1.) > fabs(cr_b.hdrr-1.))
-  if (cr_f.d_diff+cr_f.h_diff > cr_b.d_diff+cr_b.h_diff)
+  if (fabs(cr_f.hdrr-1.) > fabs(cr_b.hdrr-1.))
+  // if (cr_f.d_diff+cr_f.h_diff > cr_b.d_diff+cr_b.h_diff)
     for (int i = 0; i < M; i++)
       rintvl[i].asgn = cr_b.asgn[i];
 
-#ifdef DEBUG_ITER
+#ifdef DEBUG_REL
   fprintf(stderr,"  REL : ");
   for (int i = 0; i < M; i++)
     fprintf(stderr,"%c",stoc[(int)rintvl[i].asgn]);
