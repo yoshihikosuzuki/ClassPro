@@ -249,11 +249,6 @@ static void *kmer_class_thread(void *arg)
 #endif
 #endif   // DO_PMM
 
-#ifdef DEBUG_ITER
-      fprintf(stderr,",\n");
-      fflush(stderr);
-#endif
-
       // 6. Classification of reliable intervals and then the rest
       { classify_rel(rel_arg,rintvl,M,intvl,N,plen);
         classify_unrel(intvl,N);
@@ -566,7 +561,7 @@ int main(int argc, char *argv[])
     const int e = CLASS+1;
 #endif
 
-    if (VERBOSE)
+    if (VERBOSE && b < e)
       fprintf(stderr,"\nMerging files...\n");
 
     for (i = 0; i+1 < arg->nthreads && b+i < e-1; i++)

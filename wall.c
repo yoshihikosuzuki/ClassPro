@@ -615,6 +615,19 @@ int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
     fprintf(stderr,"    (%d, %d) pe=%lf\n",ointvl[i].b,ointvl[i].e,ointvl[i].pe);
 #endif
 
+#ifdef DEBUG_WALL
+  fprintf(stderr,"S-walls (init):");
+  for (int i = 1; i < plen; i++)
+    if (is_wall_by(SELF,wall,i))
+      fprintf(stderr," %d",i);
+  fprintf(stderr,"\n");
+  fprintf(stderr,"O-walls (init):");
+  for (int i = 1; i < plen; i++)
+    if (is_wall_by(OTHERS,wall,i))
+      fprintf(stderr," %d",i);
+  fprintf(stderr,"\n");
+#endif
+
   // Find E-intvls by multiple errors and boundary E-intvls
   int midx = NS;
   int b, e;
@@ -650,23 +663,23 @@ int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
                     continue;
                   b = i;
                   e = j;
-                  if (bs_eintvl(eintvl,0,NS,b,e) != -1)
-                    continue;
-                  pe_j = perror[j][SELF][GAIN];
-                  if ((pe = pe_i * pe_j) < PE_THRES[FINAL][SELF])
-                    continue;
-                  eintvl[midx].b = b;
-                  eintvl[midx].e = e;
-                  eintvl[midx].pe = pe;
-                  set_paired_mult(wall,i);
-                  set_paired_mult(wall,j);
-                  midx++;
+                  if (bs_eintvl(eintvl,0,NS,b,e) == -1)
+                    { pe_j = perror[j][SELF][GAIN];
+                      if ((pe = pe_i * pe_j) >= PE_THRES[FINAL][SELF])
+                        { eintvl[midx].b = b;
+                          eintvl[midx].e = e;
+                          eintvl[midx].pe = pe;
+                          set_paired_mult(wall,i);
+                          set_paired_mult(wall,j);
+                          midx++;
 #ifdef DEBUG
-                  if (midx >= plen)
-                    { fprintf(stderr,"# E-intvls >= plen\n");
-                      exit(1);
-                    }
+                          if (midx >= plen)
+                            { fprintf(stderr,"# E-intvls >= plen\n");
+                              exit(1);
+                            }
 #endif
+                        }
+                    }
                   if (is_wall_by(OTHERS,wall,j))
                     break;
                 }
@@ -694,23 +707,23 @@ int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
                     continue;
                   b = j;
                   e = i;
-                  if (bs_eintvl(eintvl,0,NS,b,e) != -1)
-                    continue;
-                  pe_j = perror[j][SELF][DROP];
-                  if ((pe = pe_i * pe_j) < PE_THRES[FINAL][SELF])
-                    continue;
-                  eintvl[midx].b = b;
-                  eintvl[midx].e = e;
-                  eintvl[midx].pe = pe;
-                  set_paired_mult(wall,i);
-                  set_paired_mult(wall,j);
-                  midx++;
+                  if (bs_eintvl(eintvl,0,NS,b,e) == -1)
+                    { pe_j = perror[j][SELF][DROP];
+                      if ((pe = pe_i * pe_j) >= PE_THRES[FINAL][SELF])
+                        { eintvl[midx].b = b;
+                          eintvl[midx].e = e;
+                          eintvl[midx].pe = pe;
+                          set_paired_mult(wall,i);
+                          set_paired_mult(wall,j);
+                          midx++;
 #ifdef DEBUG
-                  if (midx >= plen)
-                    { fprintf(stderr,"# E-intvls >= plen\n");
-                      exit(1);
-                    }
+                          if (midx >= plen)
+                            { fprintf(stderr,"# E-intvls >= plen\n");
+                              exit(1);
+                            }
 #endif
+                        }
+                    }
                   if (is_wall_by(OTHERS,wall,j))
                     break;
                 }
@@ -856,7 +869,7 @@ static void correct_wall_cnt(Intvl *intvl, int i, const uint16 *profile, Seq_Ctx
   last = MIN(I.b+2*K,I.e);
   for (pos_t i = I.b; i < last; i++)
     if (intvl[i].ccb < profile[i])
-      intvl[i].ccb = MAX(intvl[i].ccb,profile[i]);
+      intvl[i].ccb = profile[i];
   first = MAX(I.e-2*K,I.b);
   for (pos_t i = first; i < I.e; i++)
     if (intvl[i].cce < profile[i])

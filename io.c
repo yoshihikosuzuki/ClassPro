@@ -208,15 +208,13 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
     }
 #else
   DAZZ_READ  *r;
-  char        header[MAX_NAME];
-
-  DAZZ_STUB  *stub;
-  char      **flist;
-  int        *findx;
+  DAZZ_STUB  *stub = NULL;
+  char      **flist = NULL;
+  int        *findx = NULL;
   int         map;
-
   FILE       *hdrs = NULL;
   char       *hdrs_name = NULL;
+  char        header[MAX_NAME];
 
   int64       csize;
   int64       coffset[arg->nthreads];
@@ -236,6 +234,7 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
         { fprintf(stderr,"Cannot open .hdr file %s [errno=%d]\n",hdrs_name,errno);
           exit (1);
         }
+    }
 
   // Total file size and write start position per thread
   csize = 0;

@@ -8,34 +8,40 @@
  ********************************************************************************************/
 
 /* --- Developmental or experimental modes --- */
-#undef DUP_PROFILE     // Create a distinct profile instance per thread
-#undef PARALLEL_WRITE   // Experimental mode of parallel write to .class (currently only for Linux)
+// Create a distinct profile instance per thread
+#undef DUP_PROFILE
+// Experimental mode of parallel write to .class (currently only for Linux & DAZZ_DB inputs)
+#undef PARALLEL_WRITE
 const int NREAD_PWRITE = 100;   // Number of reads per write in parallel-write mode
-#undef WRITE_TRACK   // Output DAZZ track of classifications as well
-#undef DO_PMM   // Per-read H/D-cov estimation
+// Output DAZZ track of classifications as well for DAZZ_DB inputs
+#undef WRITE_TRACK
+// Per-read H/D-cov estimation
+#undef DO_PMM
 
 /* --- Debug modes --- */
-#undef DEBUG_SINGLE   // Single-read mode. No files are output
-const int DEBUG_SINGLE_ID = 55;   // Read ID in single-read mode
+// Single-read mode. No files are output
+#undef DEBUG_SINGLE
+const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
 // Never output DAZZ track in single-read mode
 #ifdef DEBUG_SINGLE
 #undef WRITE_TRACK
 #endif
 
 /* --- Debug flags --- */
-// #define DEBUG
-// #define DEBUG_ITER
-// #undef DEBUG_BINOM
-// #undef DEBUG_EMODEL
-// #undef DEBUG_CTX
-// #undef DEBUG_WALL
-// #undef DEBUG_INTVL
-// #undef DEBUG_COR
-// #undef DEBUG_PMM
-// #undef DEBUG_PROB
-// #define DEBUG_REL
-// #undef DEBUG_UNREL
-// #undef DEBUG_SLIP
+// Several assertions used for sanity check
+#define DEBUG
+#define DEBUG_ITER
+#undef DEBUG_BINOM
+#undef DEBUG_EMODEL
+#undef DEBUG_CTX
+#undef DEBUG_WALL
+#undef DEBUG_INTVL
+#undef DEBUG_COR
+#undef DEBUG_PMM
+#undef DEBUG_PROB
+#undef DEBUG_REL
+#undef DEBUG_UNREL
+#undef DEBUG_SLIP
 
 /*******************************************************************************************
  *
