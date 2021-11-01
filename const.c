@@ -13,7 +13,7 @@
 
 const char    *Usage            = "[-vs] [-T<int(4)>] "
                                   "[-c<int>] [-r<int(20000)>] "
-                                  "[-P<tmp_dir(./)>] [-N<fastk_root>] "
+                                  "[-P<tmp_dir(./)>] [-N<fastk_root>] [-M<model_path>]"
                                   "<source>[.db|.dam|.f[ast][aq][.gz] ...";
 
 const char     stoc[N_STATE]    = { 'E', 'R', 'H', 'D' };

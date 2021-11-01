@@ -6,21 +6,123 @@
 #include <float.h>
 
 #include "ClassPro.h"
+#include <gsl/gsl_multifit.h>
+
+static void polynomialfit(int N, int degree, double *data_x, double *data_y, double *coef)
+{ gsl_matrix *X, *cov;
+  gsl_vector *y, *c;
+  double chisq;
+
+  X = gsl_matrix_alloc(N, degree);
+  y = gsl_vector_alloc(N);
+  c = gsl_vector_alloc(degree);
+  cov = gsl_matrix_alloc(degree, degree);
+
+  for (int i = 0; i < N; i++)
+    { for (int j = 0; j < degree; j++)
+        gsl_matrix_set(X,i,j,pow(data_x[i],j));
+      gsl_vector_set(y,i,data_y[i]);
+    }
+
+  { gsl_multifit_linear_workspace *work;
+    work = gsl_multifit_linear_alloc(N,degree);
+    gsl_multifit_linear(X,y,c,cov,&chisq,work);
+    gsl_multifit_linear_free(work);
+  }
+
+  for (int i = 0; i < degree; i++)
+    coef[i] = gsl_vector_get(c,i);
+
+  gsl_matrix_free(X);
+  gsl_vector_free(y);
+  gsl_vector_free(c);
+  gsl_matrix_free(cov);
+
+  return;
+}
+
+typedef struct
+  { float  all;
+    float  ins;
+    float  op[9];
+  } E_Rates;
+
+typedef struct
+  { float all;
+    float op[6];
+  } M_Rates;
+
+static void load_himodel(Error_Model *emodel, const char *name)
+{ FILE *efile = fopen(name,"r");
+  int   i, kmer;
+  fread(&kmer,sizeof(int),1,efile);
+  const int krange = kmer/2 - 6;
+
+  E_Rates HepTab[0x4000];
+  fread(HepTab,sizeof(E_Rates),0x4000,efile);
+
+  M_Rates *mics[N_CTYPE];
+  int KMAX[N_CTYPE];
+  double coef[3];
+  double x[5] = {1, 2, 3, 4, 5}, y[5];
+  int n[5];
+  y[0] = 0.002;
+  for (int t = HP; t <= TS; t++)
+    { int ulen = t+1;
+      int N = (1 << (2*ulen));
+      mics[t] = ((M_Rates *)Malloc(sizeof(M_Rates)*N*krange,"Table"));
+      fread(mics[t],sizeof(M_Rates),krange*N,efile);
+      mics[t] -= 2*ulen;
+      KMAX[t] = 2*ulen+krange;
+
+      if (VERBOSE)
+        { for (i = 0; i < N; i++)
+            { printf("ulen=%d, i=%d:\n",ulen,i);
+              for (int j = 2*ulen; j < KMAX[t]; j++)
+                printf("  [%d] %5.2f",j,100.*mics[t][krange*i+j].all);
+              printf("\n");
+            }
+        }
+
+      for (int j = 2; j <= 5; j++)
+        { y[j-1] = 0.;
+          n[j-1] = 0;
+        }
+      for (int j = 2; j <= 5; j++)
+        { for (i = 0; i < N; i++)
+            { double p = mics[t][krange*i+j*ulen].all;
+              if (p > 0.)
+                { y[j-1] += p;
+                  n[j-1]++;
+                }
+            }
+          y[j-1] /= n[j-1];
+        }
+      polynomialfit(5,3,x,y,coef);
+      for (int l = 1; l <= emodel[t].lmax; l++)
+        emodel[t].pe[l] = coef[0]+coef[1]*l+coef[2]*l*l;
+
+      if (VERBOSE)
+        { for (int j = 2*ulen; j < KMAX[t]; j++)
+            { int _j = j/ulen;
+              printf("  [%d] %5.2f",j,100.*(coef[0]+coef[1]*_j+coef[2]*_j*_j));
+            }
+          printf(" (%f + %f x + %f x^2)\n",coef[0],coef[1],coef[2]);
+        }
+    }
+
+  return;
+}
 
 static uint8  CMAX;
 static double HC_ERATE;
 
-static Error_Model *load_emodel()
+static Error_Model *load_emodel(const char *name)
 { Error_Model *emodel = Malloc(sizeof(Error_Model)*N_CTYPE,"Allocating error model");
   for (int t = HP; t <= TS; t++)
     { emodel[t].lmax = (uint8)(MAX_N_LC/(t+1));
-
-      // TODO: change to loading table
       emodel[t].pe = Malloc(sizeof(double)*(emodel[t].lmax+1),"Allocating pe");
       emodel[t].pe[0] = 0.;
-      for (int l = 1; l <= emodel[t].lmax; l++)
-        emodel[t].pe[l] = 0.002 * l * l + 0.002;
-
       emodel[t].cthres = Malloc(sizeof(uint8***)*(emodel[t].lmax+1),"Allocating cthres");
       for (int l = 1; l <= emodel[t].lmax; l++)
         { emodel[t].cthres[l] = Malloc(sizeof(uint8**)*CMAX,"Allocating cthres l");
@@ -31,6 +133,17 @@ static Error_Model *load_emodel()
             }
         }
     }
+
+  if (name == NULL)
+    { if (VERBOSE)
+        fprintf(stderr,"Error model not specified. Use default error model.");
+      for (int t = HP; t <= TS; t++)
+        for (int l = 1; l <= emodel[t].lmax; l++)
+          emodel[t].pe[l] = 0.002 * l * l + 0.002;
+    }
+  else
+    load_himodel(emodel,name);
+
   return emodel;
 }
 
@@ -51,7 +164,7 @@ void free_emodel(Error_Model *emodel)
   return;
 }
 
-Error_Model *calc_init_thres()
+Error_Model *calc_init_thres(const char *name)
 { Error_Model *emodel;
   uint8        cout, cin;
   uint8        ct[N_ETYPE];
@@ -63,7 +176,7 @@ Error_Model *calc_init_thres()
       exit(1);
     }
   CMAX = GLOBAL_COV[REPEAT];
-  emodel = load_emodel();
+  emodel = load_emodel(name);
   HC_ERATE = emodel[HP].pe[1];
 
 #ifdef DEBUG_EMODEL

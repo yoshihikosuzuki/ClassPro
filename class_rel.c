@@ -325,7 +325,10 @@ static void _update(Rel_Arg *arg, int i, int M)
 #ifdef DEBUG
   if (psum == 0.)
     { fprintf(stderr,"No possible state @ %d\n",i);
-      exit(1);
+      // exit(1);
+      for (int s = ERROR; s <= DIPLO; s++)
+        logp_tr[s][ERROR] = 1.;
+      psum = 4.;
     }
 #endif
   for (int s = ERROR; s <= DIPLO; s++)

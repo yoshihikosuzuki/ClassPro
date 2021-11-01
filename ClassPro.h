@@ -140,7 +140,7 @@ typedef struct
     uint8  ****cthres;     // Threshold of count change; emodel[ctype].cthres[l][cout][thresT][etype] = cin threshold  // TODO: better order? define outside Error_Model?
   } Error_Model;
 
-Error_Model *calc_init_thres();
+Error_Model *calc_init_thres(const char *name);
 void free_emodel(Error_Model *emodel);
 
 extern const int    MAX_N_HC;
@@ -290,6 +290,7 @@ typedef struct
     char **snames;       // `<source>`; List of input sequence file names
     char  *tmp_path;     // `-P` option
     char  *fk_root;      // `-N` option
+    char  *model_path;   // `-M` option
     bool   is_db;        // .db or .dam input?
     bool   is_dam;       // .dam?
     bool   find_seeds;   // `-s` option

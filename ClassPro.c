@@ -335,6 +335,7 @@ static Arg *parse_arg(int argc, char *argv[])
   arg->rlen     = (int)DEFAULT_RLEN;
   arg->tmp_path = (char *)DEFAULT_TMP_PATH;
   arg->fk_root  = NULL;
+  arg->model_path  = NULL;
   
   j = 1;
   for (i = 1; i < argc; i++)
@@ -357,6 +358,9 @@ static Arg *parse_arg(int argc, char *argv[])
           break;
         case 'P':
           arg->tmp_path = argv[i]+2;
+          break;
+        case 'M':
+          arg->model_path = argv[i]+2;
           break;
       }
     else
@@ -514,7 +518,7 @@ int main(int argc, char *argv[])
 
     // 5. Thresholds of a count change due to errors in self and errors in others
     //    Context-specific sequcning error model is also loaded
-    emodel = calc_init_thres();
+    emodel = calc_init_thres(arg->model_path);
   }
 
   // Set error model, profile reader, and output file names/pointers for each thread
