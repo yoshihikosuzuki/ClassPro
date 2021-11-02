@@ -5,6 +5,7 @@
 #include <float.h>
 
 #include "ClassPro.h"
+// #include <gsl/gsl_sf_bessel.h>   // TODO: use GSL instead (underflow error)
 #include "bessel.h"
 #include "bessel.c"
 
@@ -38,6 +39,7 @@ static inline double logp_poisson(cnt_t k, int lambda)
 
 static inline double logp_skellam(int k, double lambda)
 { return -2. * lambda + log(bessi(abs(k),2.*lambda));   // TODO: precompute bessi?
+  // return -2. * lambda + log(gsl_sf_bessel_In(abs(k),2.*lambda));
 }
 
 #ifdef DEBUG

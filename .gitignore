@@ -4,8 +4,8 @@ prof2class
 class2acc
 class2cns
 
-gsl-latest.tar.gz
 gsl/
+*/Makefile
 
 *.old.c
 hoge.c
