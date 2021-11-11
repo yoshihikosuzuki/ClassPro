@@ -19,20 +19,21 @@ static inline void precompute_logfact()
 }
 
 #ifdef DEBUG
-static inline void _check_cnt(cnt_t n)
+static inline int _check_cnt(cnt_t n)
 {
   if (n > MAX_KMER_CNT)
     { fprintf(stderr,"K-mer count (%d) > MAX_KMER_CNT (%d) (due to D/R ratio?)\n",n,MAX_KMER_CNT);
-      exit(1);
+      // exit(1);
+      return MAX_KMER_CNT;
     }
-  return;
+  return n;
 }
 #endif
 
 static inline double logp_poisson(cnt_t k, int lambda)
 { 
 #ifdef DEBUG
-  _check_cnt(k);
+  k = _check_cnt(k);
 #endif
   return k * log((double)lambda) - lambda - logfact[k];
 }
@@ -43,12 +44,12 @@ static inline double logp_skellam(int k, double lambda)
 }
 
 #ifdef DEBUG
-static inline void _check_cnt_binom(cnt_t k, cnt_t n)
+static inline void _check_cnt_binom(cnt_t *k, cnt_t *n)
 { 
-  _check_cnt(k);
-  _check_cnt(n);
-  if (k > n)
-    { fprintf(stderr,"k (%d) > n (%d) in Binom\n",k,n);
+  *k = _check_cnt(*k);
+  *n = _check_cnt(*n);
+  if (*k > *n)
+    { fprintf(stderr,"k (%d) > n (%d) in Binom\n",*k,*n);
       exit(1);
     }
   return;
@@ -58,7 +59,7 @@ static inline void _check_cnt_binom(cnt_t k, cnt_t n)
 static inline double logp_binom(cnt_t k, cnt_t n, double p)
 { 
 #ifdef DEBUG
-  _check_cnt_binom(k,n);
+  _check_cnt_binom(&k,&n);
 #endif
   return logfact[n] - logfact[k] - logfact[n-k] + k * log(p) + (n-k) * log(1-p);
 }
@@ -66,7 +67,7 @@ static inline double logp_binom(cnt_t k, cnt_t n, double p)
 static inline double logp_binom_pre(cnt_t k, cnt_t n, double lpe, double l1mpe)
 { 
 #ifdef DEBUG
-  _check_cnt_binom(k,n);
+  _check_cnt_binom(&k,&n);
 #endif
   return logfact[n] - logfact[k] - logfact[n-k] + k * lpe + (n-k) * l1mpe;
 }
@@ -75,7 +76,7 @@ static inline double logp_binom_pre(cnt_t k, cnt_t n, double lpe, double l1mpe)
 static inline double binom_test_g(cnt_t k, cnt_t n, double pe, bool exact)
 { 
 #ifdef DEBUG
-  _check_cnt_binom(k,n);
+  _check_cnt_binom(&k,&n);
 #endif
 
   const double lpe      = log(pe);   // TODO: precompute in error models?
