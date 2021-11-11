@@ -5,4 +5,4 @@
 
 OUT_PREFIX=$1
 
-awk -F',' 'prev != $1 {print NR-1 "\t" $0} {prev = $1}' ${OUT_PREFIX}/lookup_table.txt
+awk -F',' 'prev != $1 {print NR-1 "\t" $0} {prev = $1}' ${OUT_PREFIX}/lookup_table.txt | cut -f1 | tr '\n' ' '

@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 
     if (!is_dam)
       { root      = Root(argv[1],".db");
-        pwd       = PathTo(argv[4]);
+        pwd       = PathTo(argv[1]);
         stub      = Read_DB_Stub(Catenate(pwd,"/",root,".db"),DB_STUB_NREADS|DB_STUB_PROLOGS);
         flist     = stub->prolog;
         findx     = stub->nreads;

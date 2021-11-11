@@ -1,3 +1,5 @@
+INSTALL_DIR = ~/unit-apps/ClassPro/0.2/
+
 CC = gcc
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-function
 LIBS = -Lgsl/include -lgsl -lgslcblas -lm -lz -lpthread
@@ -7,6 +9,7 @@ GENE_LIBS = libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c QV.h
 GENE_LIBS_C = libfastk.c DB.c QV.c
 GSL_LIBS = gsl/include/gsl/gsl_multifit.h# gsl/include/gsl/gsl_sf_bessel.h
 GSL_INSTALL := $(shell readlink -f gsl/)
+SCRIPTS = genomescope_thresholds.sh naive_consensus.sh agg2cons.py
 
 all: $(ALL)
 
@@ -32,3 +35,6 @@ clean:
 	rm -rf gsl/
 	cd gsl-2.7/; make clean; cd ..
 	rm -f $(ALL)
+
+install:
+	cp $(ALL) $(SCRIPTS) $(INSTALL_DIR)
