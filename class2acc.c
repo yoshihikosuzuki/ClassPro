@@ -10,15 +10,18 @@
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
-static char *Usage = "[-s] [-e<int>] [-r<int>] <estimate>.class <truth>.class";
+static char *Usage = "[-s] [-e<int>] [-r<int>] [-w<int>] [-p<read_profile[.prof]>] <estimate>.class <truth>.class";
 
 int main(int argc, char *argv[])
 { gzFile   fest, ftrue;
   kseq_t   *sest, *strue;
+  Profile_Index *P = NULL;
 
   bool SHOW_LQ = false, SHOW_CLASS = false;
   int THRES_LQ = -1;
   int THRES_R = 0;
+  int WINDOW = -1;
+  char *prof_root = NULL;
   
   { int    i, j, k;
     int    flags[128];
@@ -44,6 +47,12 @@ int main(int argc, char *argv[])
             case 'r':
               ARG_NON_NEGATIVE(THRES_R,"Read with %%R-mer > this value is regarded as repeat")
               break;
+            case 'w':
+              ARG_NON_NEGATIVE(WINDOW,"Size of window = unit of coverage calculation")
+              break;
+            case 'p':
+              prof_root = argv[i]+2;
+              break;
           }
       else
         argv[j++] = argv[i];
@@ -65,13 +74,32 @@ int main(int argc, char *argv[])
         exit (1);
       }
     strue = kseq_init(ftrue);
+
+    if (prof_root != NULL && (P = Open_Profiles(prof_root)) == NULL)
+      { fprintf(stderr,"%s: Cannot open %s as a .prof file\n",Prog_Name,prof_root);
+        exit (1);
+      }
   }
 
+  uint16 *profile = NULL;
+  int     pmax = -1, plen = -1;
+  int Km1 = -1;
+  if (P != NULL)
+    { Km1      = P->kmer-1;
+      pmax     = 20000;
+      profile  = Malloc(pmax*sizeof(uint16),"Profile array");
+    }
+
   int id = 1;
-  int64 ntot = 0, ncor = 0, nfne = 0;
+  int64 ntot = 0, ncor = 0, nfne = 0;   // Total # of k-mers, correct classifications, false-negative error classifications
+  int rtot, rcor, rfne;   // Per-read ...
+  int wcor, wfne;         // Per-window ...
   int64 ntot_normal = 0, ncor_normal = 0, nfne_normal = 0;
   int64 ntot_repeat = 0, ncor_repeat = 0, nfne_repeat = 0;
-  int rcomp[4];
+  int rcomp[4];     // # of error/haplo/diplo/repeat-mers
+  int wcomp[4];
+  int64 scnts[2];   // Sum of counts of haplo/diplo-mers for coverage calculation
+  double cov[2] = {-1, -1};    // per-read haplo/diplo coverages
   while (kseq_read(sest) >= 0)
     { if (kseq_read(strue) < 0)
         { fprintf(stderr,"# seqs in %s > # seqs in %s\n",argv[1],argv[2]);
@@ -88,6 +116,19 @@ int main(int argc, char *argv[])
           exit(1);
         }
 
+      if (P != NULL)
+        { plen = Fetch_Profile(P,(int64)id-1,pmax,profile);
+          if (plen > pmax)
+            { pmax    = 1.2*plen + 1000;
+              profile = Realloc(profile,pmax*sizeof(uint16),"Profile array");
+              Fetch_Profile(P,(int64)id-1,pmax,profile);
+            }
+          if (plen+Km1 != (int)sest->qual.l)
+            { fprintf(stderr,"Read %d inconsist lengths: %ld (estimate) vs %d (profile)\n",id,sest->qual.l,plen+Km1);
+              exit(1);
+            }
+        }
+
       int i = 0;
       while (sest->qual.s[i] == 'N')
         { if (strue->qual.s[i] != 'N')
@@ -96,29 +137,60 @@ int main(int argc, char *argv[])
             }
           i++;
         }
-      int rtot = strue->qual.l-i;
-      int rcor = 0;
-      int rfne = 0;
-      for (int i = 0; i < 4; i++) rcomp[i] = 0;
-      for (; i < (int)strue->qual.l; i++)
-        { if (sest->qual.s[i] == strue->qual.s[i]) rcor++;
-          if (strue->qual.s[i] == 'E' && sest->qual.s[i] != 'E') rfne++;
+      rtot = strue->qual.l-i;
+      rcor = rfne = 0;
+      wcor = wfne = 0;
+      for (int j = 0; j < 4; j++) 
+        { rcomp[j] = 0;
+          wcomp[j] = 0;
+        }
+      for (int j = 0; j < 2; j++) scnts[j] = 0;
+      for (int c = 1; i < (int)strue->qual.l; i++, c++)
+        { if (sest->qual.s[i] == strue->qual.s[i]) 
+            { rcor++;
+              wcor++;
+            }
+          if (strue->qual.s[i] == 'E' && sest->qual.s[i] != 'E')
+            { rfne++;
+              wfne++;
+            }
           switch (strue->qual.s[i])
             { case 'E':
-                rcomp[0]++;
+                rcomp[0]++; wcomp[0]++;
                 break;
               case 'H':
-                rcomp[1]++;
+                rcomp[1]++; wcomp[1]++;
                 break;
               case 'D':
-                rcomp[2]++;
+                rcomp[2]++; wcomp[2]++;
                 break;
               case 'R':
-                rcomp[3]++;
+                rcomp[3]++; wcomp[3]++;
                 break;
               default:
                 fprintf(stderr,"Invalid class: %c\n",strue->qual.s[i]);
                 break;
+            }
+          if (P != NULL)
+            { if (strue->qual.s[i] == 'H')
+                scnts[0] += profile[i-Km1];
+              else if (strue->qual.s[i] == 'D')
+                scnts[1] += profile[i-Km1];
+              if (WINDOW > 0)
+                { if (c % WINDOW == 0)
+                    { cov[0] = (wcomp[1] > 0) ? (double)(scnts[0])/wcomp[1] : -1;
+                      cov[1] = (wcomp[2] > 0) ? (double)(scnts[1])/wcomp[2] : -1;
+                      if (cov[0] == -1 || cov[1] == -1 || cov[0] > cov[1])
+                        cov[0] = cov[1] = -1;
+                      else 
+                        cov[1] -= cov[0];
+                      fprintf(stdout,"%%error = %4.1lf [H1-cov=%.lf,H2-cov=%.lf]\n",
+                                     (double)(WINDOW-wcor)/WINDOW*100,cov[0],cov[1]);
+                      for (int j = 0; j < 2; j++) scnts[j] = 0;
+                      for (int j = 0; j < 4; j++) wcomp[j] = 0;
+                      wcor = wfne = 0;
+                    }
+                }
             }
         }
       ntot += rtot;
@@ -135,11 +207,20 @@ int main(int argc, char *argv[])
           ncor_normal += rcor;
           nfne_normal += rfne;
         }
+      if (P != NULL)
+        { cov[0] = (rcomp[1] > 0) ? (double)(scnts[0])/rcomp[1] : -1;
+          cov[1] = (rcomp[2] > 0) ? (double)(scnts[1])/rcomp[2] : -1;
+          if (cov[0] == -1 || cov[1] == -1 || cov[0] > cov[1])
+            cov[0] = cov[1] = -1;
+          else 
+            cov[1] -= cov[0];
+        }
 
       if (SHOW_LQ && (double)(rtot-rcor)/rtot*100 >= THRES_LQ)
-        { fprintf(stdout,"Read %6d (%ld bp, %d classes): %%error = %4.1lf [%%E=%4.1lf,%%H=%4.1lf,%%D=%4.1lf,%%R=%4.1lf]\n",
+        { fprintf(stdout,"Read %6d (%ld bp, %d classes): %%error = %4.1lf [%%E=%4.1lf,%%H=%4.1lf,%%D=%4.1lf,%%R=%4.1lf] [H1-cov=%.lf,H2-cov=%.lf]\n",
                          id,strue->seq.l,rtot,(double)(rtot-rcor)/rtot*100,
-                         (double)(rcomp[0])/rtot*100,(double)(rcomp[1])/rtot*100,(double)(rcomp[2])/rtot*100,(double)(rcomp[3])/rtot*100);
+                         (double)(rcomp[0])/rtot*100,(double)(rcomp[1])/rtot*100,(double)(rcomp[2])/rtot*100,(double)(rcomp[3])/rtot*100,
+                         cov[0],cov[1]);
           if (SHOW_CLASS)
             fprintf(stdout,"  est: %s\ntruth: %s\n",sest->qual.s,strue->qual.s);
         }
