@@ -18,6 +18,7 @@ int main(int argc, char *argv[])
   Profile_Index *P = NULL;
 
   bool SHOW_LQ = false, SHOW_CLASS = false;
+  int MIN_R = 0, MAX_R = 100;
   int THRES_LQ = -1;
   int THRES_R = 0;
   int WINDOW = -1;
@@ -39,6 +40,12 @@ int main(int argc, char *argv[])
               break;
             case 's':
               SHOW_CLASS = true;
+              break;
+            case 'm':
+              ARG_NON_NEGATIVE(MIN_R,"Min %%R-mer per read to show details")
+              break;
+            case 'n':
+              ARG_NON_NEGATIVE(MAX_R,"Max %%R-mer per read to show details")
               break;
             case 'e':
               SHOW_LQ = true;
@@ -216,7 +223,8 @@ int main(int argc, char *argv[])
             cov[1] -= cov[0];
         }
 
-      if (SHOW_LQ && (double)(rtot-rcor)/rtot*100 >= THRES_LQ)
+      if (SHOW_LQ && (double)(rtot-rcor)/rtot*100 >= THRES_LQ
+          && MIN_R <= (double)(rcomp[3])/rtot*100 && (double)(rcomp[3])/rtot*100 <= MAX_R)
         { fprintf(stdout,"Read %6d (%ld bp, %d classes): %%error = %4.1lf [%%E=%4.1lf,%%H=%4.1lf,%%D=%4.1lf,%%R=%4.1lf] [H1-cov=%.lf,H2-cov=%.lf]\n",
                          id,strue->seq.l,rtot,(double)(rtot-rcor)/rtot*100,
                          (double)(rcomp[0])/rtot*100,(double)(rcomp[1])/rtot*100,(double)(rcomp[2])/rtot*100,(double)(rcomp[3])/rtot*100,

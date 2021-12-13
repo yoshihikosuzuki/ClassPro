@@ -493,8 +493,8 @@ static void _update(Rel_Arg *arg, int i, int M)
         }
 
       // H < D < R
-      if (!( (st[idx][HAPLO].cnt+5 < st[idx][DIPLO].cnt)
-             && (st[idx][DIPLO].cnt+5 < st[idx][REPEAT].cnt) ))
+      if (!( (st[idx][HAPLO].cnt < st[idx][DIPLO].cnt)
+             && (st[idx][DIPLO].cnt < st[idx][REPEAT].cnt) ))
         dp[idx] = -INFINITY;
     }
 

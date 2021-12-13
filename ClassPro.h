@@ -21,7 +21,7 @@ const int NREAD_PWRITE = 100;   // Number of reads per write in parallel-write m
 /* --- Debug modes --- */
 // Single-read mode. No files are output
 #undef DEBUG_SINGLE
-const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
+const int DEBUG_SINGLE_ID = 647;   // Read ID in single-read mode
 // Never output DAZZ track in single-read mode
 #ifdef DEBUG_SINGLE
 #undef WRITE_TRACK
@@ -30,7 +30,7 @@ const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
 /* --- Debug flags --- */
 // Several assertions used for sanity check
 #define DEBUG
-#define DEBUG_ITER
+#undef DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_EMODEL
 #undef DEBUG_CTX
@@ -232,6 +232,14 @@ void free_rel_arg(Rel_Arg *arg, int rlen_max);
 void classify_rel(Rel_Arg *arg, Intvl *rintvl, int M, Intvl *intvl, int N, int plen);
 void classify_unrel(Intvl *intvl, int N);
 // void remove_slip(uint16 *profile, int plen, Seq_Ctx *ctx[N_WTYPE], char *crack);
+
+/*******************************************************************************************
+ *
+ *  Seed selection (seed.c)
+ *
+ ********************************************************************************************/
+
+void find_seeds(const char *seq, const uint16 *profile, const char *class, const int plen, const int K);
 
 /*******************************************************************************************
  *

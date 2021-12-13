@@ -21,11 +21,13 @@
 #include "wall.c"
 #include "class_rel.c"
 #include "class_unrel.c"
+#include "seed.c"
 
 bool  VERBOSE;
 int   READ_LEN;
 bool  IS_DB;
 bool  IS_DAM;
+bool  FIND_SEED;
 cnt_t GLOBAL_COV[N_STATE];
 
 static void *kmer_class_thread(void *arg)
@@ -262,6 +264,10 @@ static void *kmer_class_thread(void *arg)
         // remove_slip(pasgn,profile,plen,ctx);
       }
 
+      // (Optional) Find seeds for alignment
+      if (FIND_SEED)
+        find_seeds(seq,profile,pasgn,plen,K);
+
 #ifdef DEBUG_SINGLE
       continue;
 #endif
@@ -373,7 +379,7 @@ static Arg *parse_arg(int argc, char *argv[])
     }
 
   arg->verbose    = flags['v'];
-  arg->find_seeds = flags['s'];
+  FIND_SEED = arg->find_seeds = flags['s'];
   arg->nfiles     = argc-1;
 
   if (arg->verbose)
