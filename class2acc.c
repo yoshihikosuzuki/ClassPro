@@ -10,7 +10,7 @@
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
-static char *Usage = "[-s] [-e<int>] [-r<int>] [-w<int>] [-p<read_profile[.prof]>] <estimate>.class <truth>.class";
+static char *Usage = "[-s] [-m<int>] [-n<int>] [-e<int>] [-r<int>] [-w<int>] [-p<read_profile[.prof]>] <estimate>.class <truth>.class";
 
 int main(int argc, char *argv[])
 { gzFile   fest, ftrue;

@@ -1,4 +1,4 @@
-INSTALL_DIR = ~/unit-apps/ClassPro/0.2/
+INSTALL_DIR = ~/unit-apps/ClassPro/0.2.1/
 
 CC = gcc
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-function
@@ -16,7 +16,7 @@ all: $(ALL)
 $(GSL_LIBS): gsl-2.7
 	mkdir -p gsl; cd gsl-2.7; ./configure --prefix=$(GSL_INSTALL); make; make install; cd ..
 
-ClassPro: ClassPro.c ClassPro.h const.c io.c util.c prob.c hist.c context.c wall.c class_rel.c class_unrel.c kseq.h bessel.c bessel.h $(GENE_LIBS) $(GSL_LIBS)
+ClassPro: ClassPro.c ClassPro.h const.c io.c util.c prob.c hist.c context.c wall.c class_rel.c class_unrel.c seed.c kseq.h bessel.c bessel.h $(GENE_LIBS) $(GSL_LIBS)
 	$(CC) $(CFLAGS) -o $@ ClassPro.c $(GENE_LIBS_C) $(LIBS)
 
 ClassGS: ClassGS.c $(GENE_LIBS)

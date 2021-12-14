@@ -763,6 +763,30 @@ Iter_Rel classify_rel_bw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
   return ret;
 }
 
+inline bool is_eq_prefix(Intvl *rintvl, int M)
+{ if (rintvl[0].asgn != true)
+    return false;
+  int i = 0;
+  while (i < M && rintvl[i].asgn) i++;
+  while (i < M)
+    { if (rintvl[i].asgn) return false;
+      i++;
+    }
+  return true;
+}
+
+inline bool is_eq_suffix(Intvl *rintvl, int M)
+{ if (rintvl[M-1].asgn != true)
+    return false;
+  int i = M-2;
+  while (i >= 0 && rintvl[i].asgn) i--;
+  while (i >= 0)
+    { if (rintvl[i].asgn) return false;
+      i--;
+    }
+  return true;
+}
+
 void classify_rel(Rel_Arg *arg, Intvl *rintvl, int M, Intvl *intvl, int N, int plen)
 { if (M == 0)
     return;
@@ -779,8 +803,8 @@ void classify_rel(Rel_Arg *arg, Intvl *rintvl, int M, Intvl *intvl, int N, int p
   fflush(stderr);
 #endif
 
-  for (int i = 0; i < M; i++)
-    rintvl[i].asgn = cr_f.asgn[i];
+  // for (int i = 0; i < M; i++)
+  //   rintvl[i].asgn = cr_f.asgn[i];
 
   Iter_Rel cr_b = classify_rel_bw(arg,rintvl,M,plen);
 #ifdef DEBUG_REL
@@ -793,10 +817,40 @@ void classify_rel(Rel_Arg *arg, Intvl *rintvl, int M, Intvl *intvl, int N, int p
   fprintf(stderr,"hdrr FWD=%lf, BWD=%lf\n",cr_f.hdrr,cr_b.hdrr);
 #endif
 
-  if (fabs(cr_f.hdrr-1.) > fabs(cr_b.hdrr-1.))
-  // if (cr_f.d_diff+cr_f.h_diff > cr_b.d_diff+cr_b.h_diff)
-    for (int i = 0; i < M; i++)
-      rintvl[i].asgn = cr_b.asgn[i];
+  // NOTE: using rintvl as `eqs`
+  for (int i = 0; i < M; i++)
+    rintvl[i].asgn = (cr_f.asgn[i] == cr_b.asgn[i]) ? true : false;
+  bool eq = true;
+  for (int i = 0; i < M; i++)
+    if (rintvl[i].asgn == false)
+      { eq = false;
+        break;
+      }
+  if (eq)
+    { for (int i = 0; i < M; i++)
+        rintvl[i].asgn = cr_f.asgn[i];
+    }
+  else
+    { if (is_eq_prefix(rintvl,M))
+        { for (int i = 0; i < M; i++)
+            rintvl[i].asgn = cr_f.asgn[i];
+        }
+      else if (is_eq_suffix(rintvl,M))
+        { for (int i = 0; i < M; i++)
+            rintvl[i].asgn = cr_b.asgn[i];
+        }
+      else
+        { if (fabs(cr_f.hdrr-1.) <= fabs(cr_b.hdrr-1.))
+          // if (cr_f.d_diff+cr_f.h_diff > cr_b.d_diff+cr_b.h_diff)
+            { for (int i = 0; i < M; i++)
+                rintvl[i].asgn = cr_f.asgn[i];
+            }
+          else
+            { for (int i = 0; i < M; i++)
+                rintvl[i].asgn = cr_b.asgn[i];
+            }
+        }
+    }
 
 #ifdef DEBUG_REL
   fprintf(stderr,"  REL : ");
