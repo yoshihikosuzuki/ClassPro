@@ -763,7 +763,7 @@ Iter_Rel classify_rel_bw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
   return ret;
 }
 
-inline bool is_eq_prefix(Intvl *rintvl, int M)
+static inline bool is_eq_prefix(Intvl *rintvl, int M)
 { if (rintvl[0].asgn != true)
     return false;
   int i = 0;
@@ -775,7 +775,7 @@ inline bool is_eq_prefix(Intvl *rintvl, int M)
   return true;
 }
 
-inline bool is_eq_suffix(Intvl *rintvl, int M)
+static inline bool is_eq_suffix(Intvl *rintvl, int M)
 { if (rintvl[M-1].asgn != true)
     return false;
   int i = M-2;

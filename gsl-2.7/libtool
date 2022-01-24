@@ -1,6 +1,6 @@
 #! /bin/sh
 # Generated automatically by config.status (gsl) 2.7
-# Libtool was configured on host deigo-login1.oist.jp:
+# Libtool was configured on host deigo-login3.oist.jp:
 # NOTE: Changes made to this file will be lost: look at ltmain.sh.
 
 # Provide generalized library-building support services.
@@ -285,7 +285,7 @@ finish_eval=""
 hardcode_into_libs=yes
 
 # Compile-time system search path for libraries.
-sys_lib_search_path_spec="/usr/lib/gcc/x86_64-redhat-linux/8 /usr/lib64 /lib64 /apps/unit/MyersU/python/3.7.10/lib /home/y/yoshihiko-suzuki/.local/lib /usr/lib /lib "
+sys_lib_search_path_spec="/usr/lib/gcc/x86_64-redhat-linux/8 /usr/lib64 /lib64 /hpcshare/appsunit/MyersU/yoshihiko-suzuki/python/3.7.12/lib /home/y/yoshihiko-suzuki/.local/lib /usr/lib /lib "
 
 # Detected run-time system search path for libraries.
 sys_lib_dlsearch_path_spec="/lib /usr/lib /usr/lib64/R/lib /usr/lib64/atlas /usr/lib64//bind9-export/ /usr/lib64/dyninst /opt/mellanox/hcoll/lib      /usr/lib64/iscsi /usr/lib64/mysql /usr/lib64/octave/5.2.0 /opt/mellanox/sharp/lib /opt/dell/srvadmin/lib64 /opt/dell/srvadmin/lib64/openmanage /opt/dell/srvadmin/lib64 /opt/dell/srvadmin/lib64 /opt/dell/srvadmin/lib64/srvadmin-idrac7 /opt/dell/srvadmin/lib64 /opt/dell/srvadmin/lib64/srvadmin-isvc /opt/dell/srvadmin/lib64 /opt/dell/srvadmin/lib64/openmanage /opt/dell/srvadmin/lib64 /opt/dell/srvadmin/lib64/openmanage /usr/lib64/tcl8.6 "
@@ -324,7 +324,7 @@ CC="gcc"
 with_gcc=yes
 
 # Compiler flag to turn off builtin functions.
-no_builtin_flag=" -fno-builtin"
+no_builtin_flag=" -fno-builtin -fno-rtti -fno-exceptions"
 
 # Additional compiler flags for building library objects.
 pic_flag=" -fPIC -DPIC"

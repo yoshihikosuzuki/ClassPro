@@ -433,7 +433,11 @@ static bool find_drop(int i, cnt_t cout, cnt_t cin, enum Etype e, enum Ctype t, 
   n = 0;
   while (true)
     { int idx = i-ulen*(n+1);
-      if (idx < 0 || ctx[GAIN][idx][t] != m+n+1)
+      // printf("idx=%d, t=%d\n",idx,t);
+      if (idx <= 0)
+        break;
+      // printf("ctx=%d\n",ctx[GAIN][idx][t]);
+      if (ctx[GAIN][idx][t] != m+n+1)
         break;
       n++;
     }
@@ -619,6 +623,8 @@ int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
               maxl  = l;
             }
         }
+      
+      // printf("i=%d, maxl=%d\n",i,maxl);
 
       for (int e = SELF; e <= OTHERS; e++)
         { if (is_paired(e, wall, i))
@@ -776,7 +782,7 @@ int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
                     continue;
                   b = i;
                   e = j;
-                  if (bs_eintvl(eintvl,0,NS,b,e) == -1)
+                  if (bs_eintvl(eintvl,0,NS-1,b,e) == -1)
                     { pe_j = perror[j][SELF][GAIN];
                       if ((pe = pe_i * pe_j) >= PE_THRES[FINAL][SELF])
                         { eintvl[midx].b = b;
@@ -820,7 +826,7 @@ int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
                     continue;
                   b = j;
                   e = i;
-                  if (bs_eintvl(eintvl,0,NS,b,e) == -1)
+                  if (bs_eintvl(eintvl,0,NS-1,b,e) == -1)
                     { pe_j = perror[j][SELF][DROP];
                       if ((pe = pe_i * pe_j) >= PE_THRES[FINAL][SELF])
                         { eintvl[midx].b = b;
@@ -914,15 +920,17 @@ int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
     if (i == plen || is_error(wall,i-1) != is_error(wall,i) || (!is_error(wall,i) && is_wall_by(OTHERS,wall,i)))
       { // set_wall(wall,i);
         e = i;
-        _idx = bs_eintvl(eintvl,0,NS,b,e);
+        _idx = bs_eintvl(eintvl,0,NS-1,b,e);
         intvl[N].b = b;
         intvl[N].e = e;
         intvl[N].cb = profile[b];
         intvl[N].ce = profile[e-1];
         intvl[N].is_rel = false;
         intvl[N].pe = (_idx != -1) ? log(eintvl[_idx].pe) : -INFINITY;
+        // printf("b=%d, e=%d (plen=%d), _idx=%d",b,e,plen,_idx);
         peob = MAX(perror[b][OTHERS][DROP],perror[b][OTHERS][GAIN]);
         peoe = MAX(perror[e][OTHERS][DROP],perror[e][OTHERS][GAIN]);
+        // printf(", peob=%lf, peoe=%lf\n",peob,peoe);
         intvl[N].pe_o.b = (peob != -INFINITY) ? log(peob) : -INFINITY;
         intvl[N].pe_o.e = (peoe != -INFINITY) ? log(peoe) : -INFINITY;
         intvl[N].asgn = N_STATE;   // unclassified
