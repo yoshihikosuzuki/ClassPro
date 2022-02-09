@@ -169,7 +169,7 @@ int main(int argc, char *argv[])
         seq      = New_Read_Buffer(db);
       }
     else
-      { rlen_max = 50000;   // FIXME: auto computation
+      { rlen_max = 60000;   // FIXME: auto computation
       }
 
     pmax     = 20000;
