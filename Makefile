@@ -2,7 +2,7 @@ INSTALL_DIR = ~/unit-apps/ClassPro/0.2.1/
 
 CC = gcc
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-function
-LIBS = -Igsl/include -Lgsl/lib -static -lgsl -lgslcblas -lm -lz -lpthread
+LIBS = -Igsl/include -Lgsl/lib -lgsl -lgslcblas -lm -lz -lpthread
 
 ALL = ClassPro ClassGS prof2class class2acc class2cns
 GENE_LIBS = libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c QV.h
@@ -17,7 +17,7 @@ gsl-2.7: gsl-2.7.tar.gz
 	tar xzvf $<
 
 $(GSL_LIBS): gsl-2.7
-	mkdir -p gsl; cd $<; ./configure --prefix=$(GSL_INSTALL); make; make install; cd ..
+	mkdir -p gsl; cd $<; ./configure --prefix=$(GSL_INSTALL) --enable-shared=no; make; make install; cd ..
 
 ClassPro: ClassPro.c ClassPro.h const.c io.c util.c prob.c hist.c context.c wall.c class_rel.c class_unrel.c seed.c kseq.h bessel.c bessel.h $(GENE_LIBS) $(GSL_LIBS)
 	$(CC) $(CFLAGS) -o $@ ClassPro.c $(GENE_LIBS_C) $(LIBS)
