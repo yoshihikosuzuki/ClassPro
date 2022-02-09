@@ -2,7 +2,7 @@ INSTALL_DIR = ~/unit-apps/ClassPro/0.2.1/
 
 CC = gcc
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-function
-LIBS = -Igsl/include -lgsl -lgslcblas -lm -lz -lpthread
+LIBS = -Igsl/include -Lgsl/lib -static -lgsl -lgslcblas -lm -lz -lpthread
 
 ALL = ClassPro ClassGS prof2class class2acc class2cns
 GENE_LIBS = libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c QV.h
