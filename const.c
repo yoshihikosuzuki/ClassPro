@@ -75,8 +75,8 @@ const int      MIN_CNT_CHANGE   = 3;       // Every count change at a wall must 
 const int      MAX_CNT_CHANGE   = 5;       // Every count change > this becomes a wall candidate(H-cov?)
 const double   PE_THRES[N_THRES][N_ETYPE] = { {0.001, 0.05},
                                               {1e-5,  1e-5} };
-const double   THRES_DIFF_EO    = log(1e-10);
-const double   THRES_DIFF_REL   = log(1e-4);
+const double   THRES_DIFF_EO    = -23.025851;   // log(1e-10);
+const double   THRES_DIFF_REL   = -9.210340;    // log(1e-4);
 
 const int      OFFSET           = 1000;
 const int      N_SIGMA_R        = 2;
