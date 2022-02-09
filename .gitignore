@@ -5,6 +5,7 @@ class2acc
 class2cns
 
 gsl/
+gsl-2.7/
 */Makefile
 
 *.old.c

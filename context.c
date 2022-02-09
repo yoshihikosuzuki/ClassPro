@@ -15,7 +15,7 @@ void calc_seq_context(Seq_Ctx *lctx, Seq_Ctx *rctx, char *seq, const int rlen)
       in_ds = in_ts = 0;
 
       if (in_hp)
-        { lctx[i][HP] = lctx[i-1][HP]+1;
+        { lctx[i][HP] = MIN(lctx[i-1][HP]+1,127);
           lctx[i][DS] = rctx[i-1][DS] = 0;
         }
       else
@@ -24,7 +24,7 @@ void calc_seq_context(Seq_Ctx *lctx, Seq_Ctx *rctx, char *seq, const int rlen)
           for (int j = i-lctx[i-1][HP], n = 0; j < i; j++, n++)
             rctx[j][HP] = lctx[i-1-n][HP];
           if (i >= 3 && seq[i-3] == seq[i-1] && seq[i-2] == seq[i])
-            { lctx[i][DS] = lctx[i-2][DS]+1;
+            { lctx[i][DS] = MIN(lctx[i-2][DS]+1,127);
               in_ds = 1;
             }
         }
@@ -42,7 +42,7 @@ void calc_seq_context(Seq_Ctx *lctx, Seq_Ctx *rctx, char *seq, const int rlen)
         { if (in_hp && seq[i-2] == seq[i-1])
             lctx[i][TS] = rctx[i-2][TS] = 0;
           else if (i >= 5 && seq[i-5] == seq[i-2] && seq[i-4] == seq[i-1] && seq[i-3] == seq[i])
-            { lctx[i][TS] = lctx[i-3][TS]+1;
+            { lctx[i][TS] = MIN(lctx[i-3][TS]+1,127);
               in_ts = 1;
             }
           else

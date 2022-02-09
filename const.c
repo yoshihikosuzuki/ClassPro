@@ -66,7 +66,7 @@ const char    *DEFAULT_TMP_PATH = "./";
  ****************************************************************************/
 
 const int      MERGE_BUF_SIZE   = 4096;    // TODO: larger is faster?
-const int      MAX_READ_LEN     = 50000;   // For fastx inputs
+const int      MAX_READ_LEN     = 60000;   // For fastx inputs
 const int      N_SIGMA_RCOV     = 6;
 
 const int      MAX_N_LC         = 20;      // Max number of bases for a single low-complexity sequence
