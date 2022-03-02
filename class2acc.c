@@ -10,6 +10,25 @@
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
+
+const char     stoc[4]    = { 'E', 'R', 'H', 'D' };
+const char     ctos[128]        = { 0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 3, 0, 0, 0,
+                                    2, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 1, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0,
+                                    0, 0, 0, 0, 0, 0, 0, 0  };
+
 static char *Usage = "[-s] [-m<int>] [-n<int>] [-e<int>] [-r<int>] [-w<int>] [-p<read_profile[.prof]>] <estimate>.class <truth>.class";
 
 int main(int argc, char *argv[])
@@ -105,6 +124,7 @@ int main(int argc, char *argv[])
   int64 ntot_repeat = 0, ncor_repeat = 0, nfne_repeat = 0;
   int rcomp[4];     // # of error/haplo/diplo/repeat-mers
   int wcomp[4];
+  int64 cfm[4][4] = {};   // confusion matrix
   int64 scnts[2];   // Sum of counts of haplo/diplo-mers for coverage calculation
   double cov[2] = {-1, -1};    // per-read haplo/diplo coverages
   while (kseq_read(sest) >= 0)
@@ -161,6 +181,7 @@ int main(int argc, char *argv[])
             { rfne++;
               wfne++;
             }
+          cfm[(int)ctos[(int)strue->qual.s[i]]][(int)ctos[(int)sest->qual.s[i]]]++;
           switch (strue->qual.s[i])
             { case 'E':
                 rcomp[0]++; wcomp[0]++;
@@ -241,7 +262,18 @@ int main(int argc, char *argv[])
       exit(1);
     }
 
-  fprintf(stdout,"Accuracy = %4.2lf %% (= %lld / %lld), FN Error = %4.2lf %%\n",
+  fprintf(stdout,"\nConfusion Matrix (Truth\\Est):\n  ");
+  for (int i = 0; i < 4; i++)
+    fprintf(stdout,"%15c",stoc[i]);
+  fprintf(stdout,"\n");
+  for (int i = 0; i < 4; i++)
+    { fprintf(stdout,"%c:",stoc[i]);
+      for (int j = 0; j < 4; j++)
+        fprintf(stdout,"%15lld",cfm[i][j]);
+      fprintf(stdout,"\n");
+    }
+
+  fprintf(stdout,"\nAccuracy = %4.2lf %% (= %lld / %lld), FN Error = %4.2lf %%\n",
                  (double)ncor/ntot*100,ncor,ntot,(double)nfne/ntot*100);
   fprintf(stdout,"[Normal] Accuracy = %4.2lf %% (= %lld / %lld), FN Error = %4.2lf %%\n",
                  (double)ncor_normal/ntot_normal*100,ncor_normal,ntot_normal,(double)nfne_normal/ntot_normal*100);
