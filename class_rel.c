@@ -662,7 +662,7 @@ Iter_Rel classify_rel_fw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
                         }
                     }
                   mean_dcov = (double)csum/lsum;
-                  if (fabs(mean_dcov-GLOBAL_COV[HAPLO]) <= fabs(mean_dcov - GLOBAL_COV[DIPLO]))
+                  if (fabs(mean_dcov-GLOBAL_COV[HAPLO]) <= fabs(mean_dcov-GLOBAL_COV[DIPLO]))
                     for (int i = 0; i < M; i++)
                       if (asgn[i] == DIPLO)
                         asgn[i] = HAPLO;
@@ -670,6 +670,48 @@ Iter_Rel classify_rel_fw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
             }
         }
     }
+  // TODO: make a function to get 1) count # of H/D intervals and 2) mean cov of H/D intervals
+  { bool all_h = true;
+    for (int i = 0; i < M; i++)
+      if (asgn[i] != HAPLO)
+        all_h = false;
+    if (all_h)
+      { int l, lsum = 0, csum = 0;
+        for (int i = 0; i < M; i++)
+          { l = rintvl[i].e-rintvl[i].b;
+            lsum += l;
+            csum += (rintvl[i].ccb+rintvl[i].cce)*l/2;
+          }
+        double mean_hcov = (double)csum/lsum;
+        if (fabs(mean_hcov-GLOBAL_COV[HAPLO]) >= fabs(mean_hcov-GLOBAL_COV[DIPLO]))
+          for (int i = 0; i < M; i++)
+            asgn[i] = DIPLO;
+      }
+  }
+
+  { int n = 0;
+    for (int i = 0; i < M; i++)
+      if (asgn[i] == HAPLO) n++;
+    if (n >= M * 0.7)
+      { int l, lsum = 0, csum = 0;
+        for (int i = 0; i < M; i++)
+          { if (asgn[i] == HAPLO)
+            { l = rintvl[i].e-rintvl[i].b;
+              lsum += l;
+              csum += (rintvl[i].ccb+rintvl[i].cce)*l/2;
+            }
+          }
+        double mean_hcov = (double)csum/lsum;
+        if (fabs(mean_hcov-GLOBAL_COV[HAPLO]) >= fabs(mean_hcov-GLOBAL_COV[DIPLO]))
+          for (int i = 0; i < M; i++)
+            { if (asgn[i] == HAPLO)
+                asgn[i] = DIPLO;
+              else if (asgn[i] == DIPLO)
+                asgn[i] = REPEAT;
+            }
+      }
+  }
+
   int first_d_idx = -1, last_d_idx = -1;
   int first_h_idx = -1, last_h_idx = -1;
   for (int i = 0; i < M; i++)
@@ -733,7 +775,7 @@ Iter_Rel classify_rel_bw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
                         }
                     }
                   mean_dcov = (double)csum/lsum;
-                  if (fabs(mean_dcov-GLOBAL_COV[HAPLO]) <= fabs(mean_dcov - GLOBAL_COV[DIPLO]))
+                  if (fabs(mean_dcov-GLOBAL_COV[HAPLO]) <= fabs(mean_dcov-GLOBAL_COV[DIPLO]))
                     for (int i = 0; i < M; i++)
                       if (asgn[i] == DIPLO)
                         asgn[i] = HAPLO;
@@ -741,6 +783,45 @@ Iter_Rel classify_rel_bw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
             }
         }
     }
+  bool all_h = true;
+  for (int i = 0; i < M; i++)
+    if (asgn[i] != HAPLO)
+      all_h = false;
+  if (all_h)
+    { int l, lsum = 0, csum = 0;
+      for (int i = 0; i < M; i++)
+        { l = rintvl[i].e-rintvl[i].b;
+          lsum += l;
+          csum += (rintvl[i].ccb+rintvl[i].cce)*l/2;
+        }
+      double mean_hcov = (double)csum/lsum;
+      if (fabs(mean_hcov-GLOBAL_COV[HAPLO]) >= fabs(mean_hcov-GLOBAL_COV[DIPLO]))
+        for (int i = 0; i < M; i++)
+          asgn[i] = DIPLO;
+    }
+
+  int n = 0;
+  for (int i = 0; i < M; i++)
+    if (asgn[i] == HAPLO) n++;
+  if (n >= M * 0.7)
+    { int l, lsum = 0, csum = 0;
+      for (int i = 0; i < M; i++)
+        { if (asgn[i] == HAPLO)
+          { l = rintvl[i].e-rintvl[i].b;
+            lsum += l;
+            csum += (rintvl[i].ccb+rintvl[i].cce)*l/2;
+          }
+        }
+      double mean_hcov = (double)csum/lsum;
+      if (fabs(mean_hcov-GLOBAL_COV[HAPLO]) >= fabs(mean_hcov-GLOBAL_COV[DIPLO]))
+        for (int i = 0; i < M; i++)
+          { if (asgn[i] == HAPLO)
+              asgn[i] = DIPLO;
+            else if (asgn[i] == DIPLO)
+              asgn[i] = REPEAT;
+          }
+    }
+
   int first_d_idx = -1, last_d_idx = -1;
   int first_h_idx = -1, last_h_idx = -1;
   for (int i = 0; i < M; i++)
