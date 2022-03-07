@@ -83,19 +83,17 @@ static inline int kmer_hash(const char *str, int K)
   return (int)(hash % MOD);
 }
 
-// NOTE: len(profile) == len(class) == plen, len(_seq) = plen + K - 1
-// NOTE: class[i] in {'E', 'H', 'D', 'R'}
-void find_seeds(const char *_seq, const uint16 *profile, const char *class, const int plen, const int K, char *sasgn)
-{ const char *seq = _seq+K-1;   // kmer seq @ i on profile = seq[i-K+1]..seq[i]
-
+static void _find_seeds(const char *seq, const uint16 *profile, const char *class, const int plen, const int K, char *sasgn, const char C)
+{ 
 #if defined(DEBUG_SEED) || defined(INFO_SEED)
   fprintf(stderr,"\n");
 #endif
 
   // Uniformly sparse count maximizers
-  const char C = 'H';
+  // sasgn = -10: not candidate, -2: seed fixed elsewhere, -1: fixed seed, 0: candidate, 1: seed
   for (int i = 0; i < plen; i++)
-    sasgn[i] = (class[i] == C) ? 1 : -10;   // -10: not candidate, -1: fixed seed, 0: candidate but not seed, 1: seed
+    if (sasgn[i] != -2)
+      sasgn[i] = (class[i] == C) ? 1 : -10;
   bool converged = false;
   int iter = 1;
   while (!converged)
@@ -127,16 +125,7 @@ void find_seeds(const char *_seq, const uint16 *profile, const char *class, cons
       iter++;
     }
   for (int i = 0; i < plen; i++)
-    {
-#ifdef DEBUG
-      if (sasgn[i] >= 0)
-        { fprintf(stderr,"Candidate remaining\n");
-          exit(1);
-        }
-#endif
-      if (sasgn[i] == -1)
-        sasgn[i] = 1;
-    }
+    if (sasgn[i] == -1) sasgn[i] = 1;
 #ifdef DEBUG_SEED
   for (int i = 0; i < plen; i++)
     if (sasgn[i] == 1) fprintf(stderr,"%c-maximizer @ %5d: kmer = %.*s, count = %d\n",C,i,K,seq+i-K+1,profile[i]);
@@ -181,16 +170,7 @@ void find_seeds(const char *_seq, const uint16 *profile, const char *class, cons
       iter++;
     }
   for (int i = 0; i < plen; i++)
-    {
-#ifdef DEBUG
-      if (sasgn[i] >= 0)
-        { fprintf(stderr,"Candidate remaining\n");
-          exit(1);
-        }
-#endif
-      if (sasgn[i] == -1)
-        sasgn[i] = 1;
-    }
+    if (sasgn[i] == -1) sasgn[i] = 1;
 #ifdef DEBUG_SEED
   for (int i = 0; i < plen; i++)
     if (sasgn[i] == 1) fprintf(stderr,"%c-minimizer @ %5d: kmer = %.*s, count = %d\n",C,i,K,seq+i-K+1,profile[i]);
@@ -205,4 +185,29 @@ void find_seeds(const char *_seq, const uint16 *profile, const char *class, cons
 #endif
 
   return;
+}
+
+// NOTE: len(profile) == len(class) == plen, len(_seq) = plen + K - 1
+// NOTE: class[i] in {'E', 'H', 'D', 'R'}
+void find_seeds(const char *_seq, const uint16 *profile, const char *class, const int plen, const int K, char *sasgn)
+{ const char *seq = _seq+K-1;   // kmer seq @ i on profile = seq[i-K+1]..seq[i]
+  _find_seeds(seq,profile,class,plen,K,sasgn,'H');
+  for (int i = 0; i < plen; i++)
+    if (sasgn[i] == 1) sasgn[i] = -2;
+  _find_seeds(seq,profile,class,plen,K,sasgn,'D');
+  for (int i = 0; i < plen; i++)
+    if (sasgn[i] == 1) sasgn[i] = -2;
+#ifdef DEBUG_SEED
+  for (int i = 0; i < plen; i++)
+    if (sasgn[i] == -2) fprintf(stderr,"seed(%c) @ %5d: kmer = %.*s, count = %d\n",class[i],i,K,seq+i-K+1,profile[i]);
+#endif
+
+#ifdef INFO_SEED
+  { int c = 0;
+    for (int i = 0; i < plen; i++)
+      if (sasgn[i] == -2) c++;
+    fprintf(stderr,"%d seeds\n",c);
+  }
+#endif
+  return; 
 }
