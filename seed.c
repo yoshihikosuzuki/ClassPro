@@ -4,8 +4,8 @@
 
 #include "ClassPro.h"
 
-#define DEBUG_SEED
-#define INFO_SEED
+#undef DEBUG_SEED
+#undef INFO_SEED
 
 #define WSIZE 1000
 #define MOD 1009
@@ -197,15 +197,20 @@ void find_seeds(const char *_seq, const uint16 *profile, const char *class, cons
   _find_seeds(seq,profile,class,plen,K,sasgn,'D');
   for (int i = 0; i < plen; i++)
     if (sasgn[i] == 1) sasgn[i] = -2;
+
+  // change flag value
+  for (int i = 0; i < plen; i++)
+    sasgn[i] = (sasgn[i] == -2) ? class[i] : 'E';
+
 #ifdef DEBUG_SEED
   for (int i = 0; i < plen; i++)
-    if (sasgn[i] == -2) fprintf(stderr,"seed(%c) @ %5d: kmer = %.*s, count = %d\n",class[i],i,K,seq+i-K+1,profile[i]);
+    if (sasgn[i] != 'E') fprintf(stderr,"seed(%c) @ %5d: kmer = %.*s, count = %d\n",class[i],i,K,seq+i-K+1,profile[i]);
 #endif
 
 #ifdef INFO_SEED
   { int c = 0;
     for (int i = 0; i < plen; i++)
-      if (sasgn[i] == -2) c++;
+      if (sasgn[i] != 'E') c++;
     fprintf(stderr,"%d seeds\n",c);
   }
 #endif

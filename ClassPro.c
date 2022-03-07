@@ -134,7 +134,7 @@ static void *kmer_class_thread(void *arg)
   }
 
   // For each read, do classification
-  for (int id = data->beg; id < data->end; id++)
+  for (int id = data->beg; id < data->beg + 100; id++)//id < data->end; id++)
     { 
 #ifdef DEBUG_SINGLE
       if (id+1 < DEBUG_SINGLE_ID)
