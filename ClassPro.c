@@ -51,6 +51,7 @@ static void *kmer_class_thread(void *arg)
   int            N, M;                   // Number of walls/reliable intervals
   Intvl         *intvl, *rintvl;
   char          *rasgn, *pasgn;          // Classifications of intervals or k-mers for read and profile
+  char          *sasgn = NULL;
   Wall_Arg      *warg;
   Rel_Arg       *rel_arg;
 #ifdef DO_PMM
@@ -110,6 +111,8 @@ static void *kmer_class_thread(void *arg)
     pasgn = rasgn + Km1;
     for (int i = 0; i < Km1; i++)
       rasgn[i] = 'N';
+    if (FIND_SEED)
+      sasgn = Malloc((rlen_max+1)*sizeof(char),"Seed array");
 
     rel_arg = alloc_rel_arg(rlen_max);
     warg = alloc_wall_arg(rlen_max);
@@ -266,7 +269,7 @@ static void *kmer_class_thread(void *arg)
 
       // (Optional) Find seeds for alignment
       if (FIND_SEED)
-        find_seeds(seq,profile,pasgn,plen,K);
+        find_seeds(seq,profile,pasgn,plen,K,sasgn);
 
 #ifdef DEBUG_SINGLE
       continue;
@@ -277,7 +280,7 @@ static void *kmer_class_thread(void *arg)
 #ifdef WRITE_TRACK
         if (IS_DB)
           { for (int i = 0; i < plen; i++)
-              crack[i] = ctos[(int)pasgn[i]];
+              crack[i] = (FIND_SEED) ? ctos[(int)sasgn[i]] : ctos[(int)pasgn[i]];
             Compress_Read(rlen,track);
             int t = COMPRESSED_LEN(rlen);
             fwrite(track,1,t,data->dfile);
