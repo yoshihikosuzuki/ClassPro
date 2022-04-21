@@ -2,10 +2,11 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#include "kdq.h"
 #include "ClassPro.h"
 
-#undef DEBUG_SEED
-#undef INFO_SEED
+#define DEBUG_SEED
+#define INFO_SEED
 
 #define WSIZE 1000
 #define MOD 1009
@@ -43,6 +44,13 @@ static const char ntor[128] = { 0, 0, 0, 0, 0, 0, 0, 0,
                                 0, 0, 0, 0, 0, 0, 0, 0,
                                 0, 0, 0, 0, 0, 0, 0, 0  };
 
+typedef struct {
+  int pos;
+  int key;
+} hmer_t;
+
+KDQ_INIT(hmer_t);
+
 static inline bool is_canonical(const char *str, int K)
 { for (int i = 0; i < K/2+K%2; i++)
     if (ntoi[(int)str[i]] != (ntor[(int)str[K-1-i]]))
@@ -53,7 +61,7 @@ static inline bool is_canonical(const char *str, int K)
       exit(1);
     }
 #endif
-  return false;   // parindrome
+  return false;   // palindrome
 }
 
 static inline char complement(char c)
@@ -83,31 +91,65 @@ static inline int kmer_hash(const char *str, int K)
   return (int)(hash % MOD);
 }
 
-static void _find_seeds(const char *seq, const uint16 *profile, const char *class, const int plen, const int K, char *sasgn, const char C)
+static void _find_seeds(const char *seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn, const char C)
 { 
 #if defined(DEBUG_SEED) || defined(INFO_SEED)
   fprintf(stderr,"\n");
 #endif
 
+  kdq_t(hmer_t) *Q = kdq_init(hmer_t);
+  hmer_t e;
+  hmer_t *p;
+  
   // Uniformly sparse count maximizers
   // sasgn = -10: not candidate, -2: seed fixed elsewhere, -1: fixed seed, 0: candidate, 1: seed
   for (int i = 0; i < plen; i++)
     if (sasgn[i] != -2)
-      sasgn[i] = (class[i] == C) ? 1 : -10;
+      sasgn[i] = (class[i] == C) ? 0 : -10;
   bool converged = false;
   int iter = 1;
   while (!converged)
-    { for (int i = 0; i < plen-WSIZE; i++)   // TODO: deque or binomial heap
-        { int cmax = -1;
-          for (int j = 0; j < WSIZE; j++)
-            if (sasgn[i+j] >= 0) cmax = MAX(profile[i+j],cmax);
-          for (int j = 0; j < WSIZE; j++)
-            if (sasgn[i+j] == 1 && profile[i+j] < cmax)
-              sasgn[i+j] = 0;
+    { for (int i = 0; i < plen - WSIZE; i++)   // TODO: deque or binomial heap
+        { if (sasgn[i] >= 0)
+            { e.pos = i;
+              e.key = profile[i];
+              while (kdq_size(Q) > 0) {
+                hmer_t f = kdq_at(Q, kdq_size(Q) - 1);   // TODO: return pointer instead of object?
+                if (f.key < e.key) {
+                  kdq_size(Q)--;
+                } else {
+                  break;
+                }
+              }
+              kdq_push(hmer_t, Q, e);
+            }
+          if (kdq_size(Q) == 0) continue;
+          if (kdq_at(Q, 0).pos <= i - WSIZE) {
+            while (kdq_size(Q) > 0 && kdq_at(Q, 0).pos <= i - WSIZE) {
+              p = kdq_shift(hmer_t, Q);
+            }
+          }
+          if (kdq_size(Q) == 0) continue;
+          e = kdq_at(Q, 0);   // TODO: tie?
+          sasgn[e.pos]++;
+          // int cmax = -1;
+          // for (int j = 0; j < WSIZE; j++)
+          //   if (sasgn[i+j] >= 0) cmax = MAX(profile[i+j],cmax);
+          // for (int j = 0; j < WSIZE; j++)
+          //   if (sasgn[i+j] == 1 && profile[i+j] < cmax)
+          //     sasgn[i+j] = 0;
+#ifdef DEBUG_SEED
+          // fprintf(stderr, "@ %5d: |Q| = %ld, Q =", i, kdq_size(Q));
+          // for (int j = 0; j < (int)kdq_size(Q); j++) {
+          //   fprintf(stderr, "  %d @ %d", kdq_at(Q, j).key, kdq_at(Q, j).pos);
+          // }
+          // fprintf(stderr, "\n");
+#endif
         }
 #ifdef DEBUG_SEED
-      for (int i = 0; i < plen; i++)
-        if (sasgn[i] == 1) fprintf(stderr,"%c-maximizer(%d) @ %5d: kmer = %.*s, count = %d\n",C,iter,i,K,seq+i-K+1,profile[i]);
+      // for (int i = 0; i < plen; i++)
+      //   if (sasgn[i] >= 0) fprintf(stderr,"%c-maximizer(%d) @ %5d: kmer = %.*s, count = %d, sasgn = %d\n",C,iter,i,K,seq+i-K+1,profile[i], sasgn[i]);
+      // exit(1);
 #endif
       for (int i = 0; i < plen; i++)
         if (sasgn[i] == 1)
@@ -189,7 +231,7 @@ static void _find_seeds(const char *seq, const uint16 *profile, const char *clas
 
 // NOTE: len(profile) == len(class) == plen, len(_seq) = plen + K - 1
 // NOTE: class[i] in {'E', 'H', 'D', 'R'}
-void find_seeds(const char *_seq, const uint16 *profile, const char *class, const int plen, const int K, char *sasgn)
+void find_seeds(const char *_seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn)
 { const char *seq = _seq+K-1;   // kmer seq @ i on profile = seq[i-K+1]..seq[i]
   _find_seeds(seq,profile,class,plen,K,sasgn,'H');
   for (int i = 0; i < plen; i++)
