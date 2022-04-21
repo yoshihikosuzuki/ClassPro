@@ -1,5 +1,6 @@
 # ClassPro: A K-mer classifier for HiFi reads
 
+
 A k-mer classification program based on read profiles (a.k.a. k-mer count profiles) computed by the [FASTK](https://github.com/thegenemyers/FASTK) k-mer counter developed by Gene Myers.
 
 The input data should be HiFi reads. The sequencing coverage is roughly assumed to be not too small (e.g. <10x) nor not too high (e.g. >100x). We storngly assume that the ploidy of the underlying genome is diploid.
