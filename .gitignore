@@ -12,6 +12,8 @@ gsl-2.7/
 hoge.c
 a.out
 
+seed_naive.c
+
 # Prerequisites
 *.d
 

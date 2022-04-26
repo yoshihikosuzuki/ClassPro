@@ -22,6 +22,7 @@
 #include "class_rel.c"
 #include "class_unrel.c"
 #include "seed.c"
+// #include "seed_naive.c"
 
 bool  VERBOSE;
 int   READ_LEN;
@@ -51,7 +52,7 @@ static void *kmer_class_thread(void *arg)
   int            N, M;                   // Number of walls/reliable intervals
   Intvl         *intvl, *rintvl;
   char          *rasgn, *pasgn;          // Classifications of intervals or k-mers for read and profile
-  int          *sasgn = NULL;
+  int          *sasgn = NULL, *hash = NULL;
   Wall_Arg      *warg;
   Rel_Arg       *rel_arg;
 #ifdef DO_PMM
@@ -112,7 +113,9 @@ static void *kmer_class_thread(void *arg)
     for (int i = 0; i < Km1; i++)
       rasgn[i] = 'N';
     if (FIND_SEED)
-      sasgn = Malloc((rlen_max+1)*sizeof(int),"Seed array");
+      { sasgn = Malloc((rlen_max+1)*sizeof(int),"Seed array");
+        hash  = Malloc((rlen_max+1)*sizeof(int),"Hash array");
+      }
 
     rel_arg = alloc_rel_arg(rlen_max);
     warg = alloc_wall_arg(rlen_max);
@@ -269,7 +272,7 @@ static void *kmer_class_thread(void *arg)
 
       // (Optional) Find seeds for alignment
       if (FIND_SEED)
-        find_seeds(seq,profile,pasgn,plen,K,sasgn);
+        find_seeds(seq,profile,pasgn,plen,K,sasgn,hash);
 
 #ifdef DEBUG_SINGLE
       continue;

@@ -239,7 +239,7 @@ void classify_unrel(Intvl *intvl, int N);
  *
  ********************************************************************************************/
 
-void find_seeds(const char *seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn);
+void find_seeds(const char *seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn, int *hash);
 
 /*******************************************************************************************
  *
