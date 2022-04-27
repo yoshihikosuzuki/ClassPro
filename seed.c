@@ -6,7 +6,7 @@
 #include "kdq.h"
 #include "ClassPro.h"
 
-#define DEBUG_HASH
+#undef DEBUG_HASH
 #define DEBUG_SEED
 #define INFO_SEED
 
@@ -74,25 +74,20 @@ static void kmer_hash(const char *seq, int *hash, int plen, int K)
   return;
 }
 
-static void _find_seeds(const char *seq, const uint16 *profile, const char *class, const int *hash, const int plen, const int K, int *sasgn, const char C)
-{ 
-#if defined(DEBUG_SEED) || defined(INFO_SEED)
-  fprintf(stderr,"\n");
-#endif
-
-  kdq_t(hmer_t) *Q = kdq_init(hmer_t);
+static inline void count_maximizer(const char *seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn, const char C)
+{ kdq_t(hmer_t) *Q = kdq_init(hmer_t);   // TODO: reuse deque throughout CP?
   hmer_t e, f;
   hmer_t *p;
-  
-  // Uniformly sparse count maximizers using sliding window maximum alrogithm
-  // sasgn:   -10 = not candidate,   -2 = seed fixed elsewhere,   -1 = fixed seed,   0 = candidate,   1 = seed
-  for (int i = 0; i < plen; i++)
-    if (sasgn[i] != -2)
-      sasgn[i] = (class[i] == C) ? 0 : -10;
+
+  // Uniformly sparse count maximizers using sliding window maximum algorithm
   bool converged = false;
   int iter = 1;
   while (!converged)
-    { for (int i = 0; i < plen; i++)   // TODO: Currently using deque. How about binomial heap?
+    { 
+#ifdef DEBUG_SEED
+      // fprintf(stderr,"iter %d: |Q| = %ld\n",iter,kdq_size(Q));
+#endif
+      for (int i = 0; i < plen; i++)   // TODO: Currently using deque. How about binomial heap?
         { if (sasgn[i] >= 0)
             { // Add a new element `e` into the deque
               e.pos = i;
@@ -133,6 +128,7 @@ static void _find_seeds(const char *seq, const uint16 *profile, const char *clas
           // fprintf(stderr, "\n");
 #endif
         }   // for (int i = 0; i < plen - WSIZE; i++)
+
 #ifdef DEBUG_SEED
       for (int i = 0; i < plen; i++)
         if (sasgn[i] >= 0)
@@ -140,12 +136,21 @@ static void _find_seeds(const char *seq, const uint16 *profile, const char *clas
               { fprintf(stderr, "sasgn[%d] >= 0 where class(%c) != %c\n", i, class[i], C);
                 exit(1);
               }
-            fprintf(stderr,"%c-maximizer(%d) @ %5d: kmer = %.*s, count = %d, #window = %d\n",C,iter,i,K,seq+i-K+1,profile[i],sasgn[i]);
+            bool is_usm = false;
+            if (   (i < plen-WSIZE+1 && sasgn[i] == WSIZE)
+                || (plen-WSIZE+1 <= i && sasgn[i] == plen-i) )
+                { is_usm = true; }
+            fprintf(stderr,"%c-maximizer(%d) %c @ %5d: kmer = %.*s, count = %d, #window = %d\n",
+                           C,iter,(is_usm) ? '*' : ' ',i,K,seq+i-K+1,profile[i],sasgn[i]);
           }
 #endif
-      // Find USM
-      for (int i = 0; i < plen; i++)
+
+      // Find USM (while being careful for both `WSIZE`-bp ends of a read)
+      for (int i = 0; i < plen-WSIZE+1; i++)
         if (sasgn[i] == WSIZE) sasgn[i] = -1;
+      for (int i = plen-WSIZE+1; i < plen; i++)
+        if (sasgn[i] == plen-i) sasgn[i] = -1;
+
       // Filter out interval (i-|w|,i+|W|) for each position i where the k-mer at i is USM
       for (int i = 0; i < plen; i++)
         if (sasgn[i] == -1)
@@ -153,16 +158,27 @@ static void _find_seeds(const char *seq, const uint16 *profile, const char *clas
               if (sasgn[j] >= 0)
                 sasgn[j] = -10;
           }
+
+      // Converged?
       converged = true;
       for (int i = 0; i < plen; i++)
         if (sasgn[i] >= 0)
           { converged = false;
             sasgn[i] = 0;
           }
+      // Empty the queue   // TODO: which of the two below is better?
+      // while (kdq_pop(hmer_t,Q)) {}
+      kdq_size(Q) = 0;
       iter++;
-    }
+
+#ifdef DEBUG_SEED
+      // if (iter > 10) break;
+#endif
+    }   // while (!converged)
+
   for (int i = 0; i < plen; i++)
     if (sasgn[i] == -1) sasgn[i] = 1;
+
 #ifdef DEBUG_SEED
   for (int i = 0; i < plen; i++)
     if (sasgn[i] == 1) fprintf(stderr,"%c-maximizer @ %5d: kmer = %.*s, count = %d\n",C,i,K,seq+i-K+1,profile[i]);
@@ -176,10 +192,19 @@ static void _find_seeds(const char *seq, const uint16 *profile, const char *clas
   }
 #endif
 
-  exit(0);
+  kdq_destroy(hmer_t,Q);
+  
+  return;
+}
 
+static inline void hash_minimizer(const char *seq, const uint16 *profile, const char *class, const int *hash, const int plen, const int K, int *sasgn, const char C)
+{ kdq_t(hmer_t) *Q = kdq_init(hmer_t);
+  hmer_t e, f;
+  hmer_t *p;
+  
   // Uniformly sparse modimizers among the maximizers
-  iter = 1; converged = false;
+  bool converged = false;
+  int iter = 1;
   while (!converged)
     { for (int i = 0; i < plen-WSIZE; i++)
         { int hmin = MOD;
@@ -222,6 +247,30 @@ static void _find_seeds(const char *seq, const uint16 *profile, const char *clas
     fprintf(stderr,"%d %c-minimizers\n",c,C);
   }
 #endif
+
+  kdq_destroy(hmer_t,Q);
+
+  return;
+}
+
+static void _find_seeds(const char *seq, const uint16 *profile, const char *class, const int *hash, const int plen, const int K, int *sasgn, const char C)
+{ 
+#if defined(DEBUG_SEED) || defined(INFO_SEED)
+  fprintf(stderr,"\n");
+#endif
+
+  // Meaning of the value of `sasgn` (for each position (= k-mer)):   // TODO: change to bit operation with macros?
+  //   -10 = not candidate
+  //    -2 = seed fixed elsewhere
+  //    -1 = fixed seed
+  //     0 = candidate
+  //     1 = seed
+  for (int i = 0; i < plen; i++)
+    if (sasgn[i] != -2)
+      sasgn[i] = (class[i] == C) ? 0 : -10;
+
+  count_maximizer(seq,profile,class,plen,K,sasgn,C);
+  hash_minimizer(seq,profile,class,hash,plen,K,sasgn,C);
 
   return;
 }
