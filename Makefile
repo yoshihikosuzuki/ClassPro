@@ -19,7 +19,7 @@ gsl-2.7: gsl-2.7.tar.gz
 $(GSL_LIBS): gsl-2.7
 	mkdir -p gsl; cd $<; ./configure --prefix=$(GSL_INSTALL) --enable-shared=no; make; make install; cd ..
 
-ClassPro: ClassPro.c ClassPro.h const.c io.c util.c prob.c hist.c context.c wall.c class_rel.c class_unrel.c seed.c kseq.h bessel.c bessel.h $(GENE_LIBS) $(GSL_LIBS)
+ClassPro: ClassPro.c ClassPro.h const.c io.c util.c prob.c hist.c context.c wall.c class_rel.c class_unrel.c seed.c kseq.h bessel.c bessel.h kdq.h nthash.h $(GENE_LIBS) $(GSL_LIBS)
 	$(CC) $(CFLAGS) -o $@ ClassPro.c $(GENE_LIBS_C) $(LIBS)
 
 ClassGS: ClassGS.c $(GENE_LIBS)
