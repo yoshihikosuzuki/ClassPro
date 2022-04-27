@@ -53,6 +53,7 @@ static void *kmer_class_thread(void *arg)
   Intvl         *intvl, *rintvl;
   char          *rasgn, *pasgn;          // Classifications of intervals or k-mers for read and profile
   int          *sasgn = NULL, *hash = NULL;
+  kdq_t(hmer_t) *Q = kdq_init(hmer_t);
   Wall_Arg      *warg;
   Rel_Arg       *rel_arg;
 #ifdef DO_PMM
@@ -186,7 +187,7 @@ static void *kmer_class_thread(void *arg)
           }
 
 #if defined(DEBUG) || defined(DEBUG_CTX) || defined(DEBUG_ERROR) || defined(DEBUG_ITER)
-        fprintf(stderr,"\nRead %d (%d bp): ",id+1,rlen);
+        fprintf(stderr,"\nRead %5d (%5d bp): ",id+1,rlen);
         fflush(stderr);
 #endif
 
@@ -237,7 +238,7 @@ static void *kmer_class_thread(void *arg)
       // 4. Wall detection
       N = find_wall(warg,intvl,profile,plen,ctx,emodel,K);
 #ifdef DEBUG_ITER
-      fprintf(stderr,"%d intvls",N);
+      fprintf(stderr,"%3d intvls",N);
 #endif
 
       // 5. Reliable interval detection
@@ -246,14 +247,14 @@ static void *kmer_class_thread(void *arg)
       int rtot = 0;
       for (int i = 0; i < M; i++)
         rtot += rintvl[i].e - rintvl[i].b;
-      fprintf(stderr,", %d rel intvls (%%base=%d)",M,(int)(100.*rtot/plen));
+      fprintf(stderr,", %3d rel intvls (%%base=%2d)",M,(int)(100.*rtot/plen));
 #endif
 
 #ifdef DO_PMM
       // Local coverage estimation via Poisson mixture model (optional)
       int nnorm = pmm_vi(parg,profile,plen,lambda);
 #ifdef DEBUG_ITER
-      fprintf(stderr,", (H,D)=(%.lf,%.lf) (%d %% normal)",lambda[0],lambda[1],(int)(100.*nnorm/plen));
+      fprintf(stderr,", (H,D)=(%.lf,%.lf) (%2d %% normal)",lambda[0],lambda[1],(int)(100.*nnorm/plen));
 #endif
 #endif   // DO_PMM
 
@@ -272,7 +273,7 @@ static void *kmer_class_thread(void *arg)
 
       // (Optional) Find seeds for alignment
       if (FIND_SEED)
-        find_seeds(seq,profile,pasgn,plen,K,sasgn,hash);
+        find_seeds(seq,profile,pasgn,plen,K,sasgn,hash,Q);
 
 #ifdef DEBUG_SINGLE
       continue;
@@ -311,6 +312,7 @@ static void *kmer_class_thread(void *arg)
   free(rasgn);
   free_wall_arg(warg);
   free_rel_arg(rel_arg, rlen_max);
+  kdq_destroy(hmer_t,Q);
 #ifdef DO_PMM
   free_pmm_arg(parg);
 #endif

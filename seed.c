@@ -3,12 +3,11 @@
 #include <stdbool.h>
 
 #include "nthash.h"
-#include "kdq.h"
 #include "ClassPro.h"
 
 #undef DEBUG_HASH
-#define DEBUG_SEED
-#define INFO_SEED
+#undef DEBUG_SEED
+#undef INFO_SEED
 
 #define WSIZE 1000
 #define MOD 1009
@@ -46,13 +45,6 @@ static const char ntor[128] = { 0, 0, 0, 0, 0, 0, 0, 0,
                                 0, 0, 0, 0, 0, 0, 0, 0,
                                 0, 0, 0, 0, 0, 0, 0, 0  };
 
-typedef struct {
-  int pos;
-  int key;
-} hmer_t;
-
-KDQ_INIT(hmer_t);
-
 static void kmer_hash(const char *seq, int *hash, int plen, int K)
 { uint64_t hVal, fhVal = 0, rhVal = 0;   // canonical, forward, and reverse-strand hash values
   hVal = NTC64_b(seq-K+1,K,&fhVal,&rhVal);   // initial hash value
@@ -74,10 +66,17 @@ static void kmer_hash(const char *seq, int *hash, int plen, int K)
   return;
 }
 
-static inline void count_maximizer(const char *seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn, const char C)
-{ kdq_t(hmer_t) *Q = kdq_init(hmer_t);   // TODO: reuse deque throughout CP?
+static inline void count_maximizer(const char *seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn, const char C, kdq_t(hmer_t) *Q)
+{ //kdq_t(hmer_t) *Q = kdq_init(hmer_t);   // TODO: reuse deque throughout CP?
   hmer_t e, f;
   hmer_t *p;
+
+#ifdef DEBUG_SEED
+  if (kdq_size(Q) != 0)
+    { fprintf(stderr,"deque not empty!\n");
+      exit(1);
+    }
+#endif
 
   // Uniformly sparse count maximizers using sliding window maximum algorithm
   bool converged = false;
@@ -198,16 +197,23 @@ static inline void count_maximizer(const char *seq, const uint16 *profile, const
   fprintf(stderr,"%d %c-maximizers\n",c,C);
 #endif
 
-  kdq_destroy(hmer_t,Q);
+  // kdq_destroy(hmer_t,Q);
   
   return;
 }
 
-static inline void hash_minimizer(const char *seq, const uint16 *profile, const char *class, const int *hash, const int plen, const int K, int *sasgn, const char C)
-{ kdq_t(hmer_t) *Q = kdq_init(hmer_t);
+static inline void hash_minimizer(const char *seq, const uint16 *profile, const char *class, const int *hash, const int plen, const int K, int *sasgn, const char C, kdq_t(hmer_t) *Q)
+{ // kdq_t(hmer_t) *Q = kdq_init(hmer_t);
   hmer_t e, f;
   hmer_t *p;
-  
+
+#ifdef DEBUG_SEED
+  if (kdq_size(Q) != 0)
+    { fprintf(stderr,"deque not empty!\n");
+      exit(1);
+    }
+#endif
+
   // Uniformly sparse modimizers among the maximizers
   bool converged = false;
   int iter = 1;
@@ -326,18 +332,13 @@ static inline void hash_minimizer(const char *seq, const uint16 *profile, const 
   fprintf(stderr,"%d %c-minimizers\n",c,C);
 #endif
 
-  kdq_destroy(hmer_t,Q);
+  // kdq_destroy(hmer_t,Q);
 
   return;
 }
 
-static void _find_seeds(const char *seq, const uint16 *profile, const char *class, const int *hash, const int plen, const int K, int *sasgn, const char C)
-{ 
-#if defined(DEBUG_SEED) || defined(INFO_SEED)
-  fprintf(stderr,"\n");
-#endif
-
-  // Meaning of the value of `sasgn` (for each position (= k-mer)):   // TODO: change to bit operation with macros?
+static void _find_seeds(const char *seq, const uint16 *profile, const char *class, const int *hash, const int plen, const int K, int *sasgn, const char C, kdq_t(hmer_t) *Q)
+{ // Meaning of the value of `sasgn` (for each position (= k-mer)):   // TODO: change to bit operation with macros?
   //   -10 = not candidate
   //    -2 = seed fixed elsewhere
   //    -1 = fixed seed
@@ -347,22 +348,27 @@ static void _find_seeds(const char *seq, const uint16 *profile, const char *clas
     if (sasgn[i] != -2)
       sasgn[i] = (class[i] == C) ? 0 : -10;
 
-  count_maximizer(seq,profile,class,plen,K,sasgn,C);
-  hash_minimizer(seq,profile,class,hash,plen,K,sasgn,C);
+  count_maximizer(seq,profile,class,plen,K,sasgn,C,Q);
+  hash_minimizer(seq,profile,class,hash,plen,K,sasgn,C,Q);
 
   return;
 }
 
 // NOTE: len(profile) == len(class) == plen, len(_seq) = plen + K - 1
 // NOTE: class[i] in {'E', 'H', 'D', 'R'}
-void find_seeds(const char *_seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn, int *hash)
-{ const char *seq = _seq+K-1;   // kmer seq @ i on profile = seq[i-K+1]..seq[i]
+void find_seeds(const char *_seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn, int *hash, kdq_t(hmer_t) *Q)
+{ 
+#if defined(DEBUG_SEED) || defined(INFO_SEED)
+  fprintf(stderr,"\n");
+#endif
+
+  const char *seq = _seq+K-1;   // kmer seq @ i on profile = seq[i-K+1]..seq[i]
   // Compute canonical hash for every k-mer
   kmer_hash(seq,hash,plen,K);
 
   // Find seeds from first H-mers and then D-mers
-  _find_seeds(seq,profile,class,hash,plen,K,sasgn,'H');
-  _find_seeds(seq,profile,class,hash,plen,K,sasgn,'D');   // TODO: density adjustment based on the H-MMs
+  _find_seeds(seq,profile,class,hash,plen,K,sasgn,'H',Q);
+  _find_seeds(seq,profile,class,hash,plen,K,sasgn,'D',Q);   // TODO: density adjustment based on the H-MMs
 
   // change flag value
   for (int i = 0; i < plen; i++)
@@ -373,11 +379,11 @@ void find_seeds(const char *_seq, const uint16 *profile, const char *class, cons
     if (sasgn[i] != 'E') fprintf(stderr,"seed(%c) @ %5d: kmer = %.*s, count = %d\n",class[i],i,K,seq+i-K+1,profile[i]);
 #endif
 
-#ifdef INFO_SEED
+#ifdef DEBUG_ITER
   { int c = 0;
     for (int i = 0; i < plen; i++)
       if (sasgn[i] != 'E') c++;
-    fprintf(stderr,"%d seeds\n",c);
+    fprintf(stderr,", %3d seeds",c);
   }
 #endif
   return; 
