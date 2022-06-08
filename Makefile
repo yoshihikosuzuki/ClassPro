@@ -1,4 +1,4 @@
-INSTALL_DIR = ~/unit-apps/ClassPro/0.2.1/
+INSTALL_DIR = ~/unit-apps/ClassPro/0.3/
 
 CC = gcc
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-function
@@ -38,4 +38,5 @@ clean:
 	rm -rf gsl/ gsl-2.7/ $(ALL)
 
 install:
+	mkdir -p $(INSTALL_DIR)
 	cp $(ALL) $(SCRIPTS) $(INSTALL_DIR)

@@ -29,8 +29,8 @@ const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
 
 /* --- Debug flags --- */
 // Several assertions used for sanity check
-#define DEBUG
-#define DEBUG_ITER
+#undef DEBUG
+#undef DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_EMODEL
 #undef DEBUG_CTX
