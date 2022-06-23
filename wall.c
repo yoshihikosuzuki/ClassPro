@@ -593,6 +593,11 @@ int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
       cnt_t ci   = profile[i];
       if (MIN(cim1,ci) >= GLOBAL_COV[REPEAT])
         continue;
+      // if (MAX(cim1,ci) >= GLOBAL_COV[REPEAT])
+      //   { // Always set as a wall when entering R
+      //     set_wall_by(OTHERS,wall,i);
+      //     continue;
+      //   }
 
       uint16 cng = abs((int)cim1-ci);
       if (cng < MIN_CNT_CHANGE)

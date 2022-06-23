@@ -529,6 +529,8 @@ int main(int argc, char *argv[])
     GLOBAL_COV[ERROR] = 1;
     GLOBAL_COV[REPEAT] = plus_sigma(GLOBAL_COV[DIPLO],N_SIGMA_RCOV);
     DR_RATIO = 1.+(double)N_SIGMA_R*(1./sqrt(GLOBAL_COV[DIPLO]));
+    if (arg->verbose)
+      fprintf(stderr,"    Estimated R-threshold = %d\n",GLOBAL_COV[REPEAT]);
 
     // 5. Thresholds of a count change due to errors in self and errors in others
     //    Context-specific sequcning error model is also loaded

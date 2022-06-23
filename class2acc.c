@@ -10,6 +10,7 @@
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)
 
+#define DEBUG
 
 const char     stoc[4]    = { 'E', 'R', 'H', 'D' };
 const char     ctos[128]        = { 0, 0, 0, 0, 0, 0, 0, 0,
@@ -29,19 +30,35 @@ const char     ctos[128]        = { 0, 0, 0, 0, 0, 0, 0, 0,
                                     0, 0, 0, 0, 0, 0, 0, 0,
                                     0, 0, 0, 0, 0, 0, 0, 0  };
 
-static char *Usage = "[-s] [-m<int>] [-n<int>] [-e<int>] [-r<int>] [-w<int>] [-p<read_profile[.prof]>] <estimate>.class <truth>.class";
+static char *Usage = "\
+[-s] [-e<int>] [-m<int(0)>] [-n<int(100)>] [-r<int(0)>] [-w<int>] [-p<read_profile[.prof]>] <estimate>.class <truth>.class\n\
+\n\
+  -e<int> : If specified with a value, classification information is shown for every read that has a misclassification rate larger than this value.\n\
+\n\
+  If `-e` is specified, then the following options become valid (Otherwise ignored):\n\
+\n\
+    -s           : If specified, for each read the ground-truth classification and the estimated classification are shown.\n\
+    -m<int(0)>   : Minimum Repeat-mer rate of a read to be shown.\n\
+    -n<int(100)> : Maximum Repeat-mer rate of a read to be shown.\n\
+\n\
+  -r<int(0)>   : Used for global accuracy calculation. Reads with a Repeat-mer rate larger than this value are regarded as 'Repeat reads'.\n\
+  -w<int> : If specified with a value, instead of each read, accuracy is calculated for each window of the size of this value.\n\
+  -p      : Path to .prof file.\n\
+";
 
 int main(int argc, char *argv[])
 { gzFile   fest, ftrue;
   kseq_t   *sest, *strue;
   Profile_Index *P = NULL;
 
-  bool SHOW_LQ = false, SHOW_CLASS = false;
-  int MIN_R = 0, MAX_R = 100;
-  int THRES_LQ = -1;
-  int THRES_R = 0;
-  int WINDOW = -1;
-  char *prof_root = NULL;
+  bool  SHOW_LQ    = false;   // -e
+  bool  SHOW_CLASS = false;   // -s
+  int   MIN_R      = 0;       // -m
+  int   MAX_R      = 100;     // -n
+  int   THRES_LQ   = -1;      // -e
+  int   THRES_R    = 0;       // -r
+  int   WINDOW     = -1;      // -w
+  char *prof_root  = NULL;
   
   { int    i, j, k;
     int    flags[128];
@@ -251,7 +268,14 @@ int main(int argc, char *argv[])
                          (double)(rcomp[0])/rtot*100,(double)(rcomp[1])/rtot*100,(double)(rcomp[2])/rtot*100,(double)(rcomp[3])/rtot*100,
                          cov[0],cov[1]);
           if (SHOW_CLASS)
-            fprintf(stdout,"  est: %s\ntruth: %s\n",sest->qual.s,strue->qual.s);
+            { fprintf(stdout,"truth: %s\n  est: ",strue->qual.s);
+              for (int i = 0; i < (int)sest->qual.l; i++)
+                if (strue->qual.s[i] != sest->qual.s[i])
+                  fprintf(stdout,"%c",sest->qual.s[i]);
+                else
+                  fprintf(stdout,"-");
+              fprintf(stdout,"\n");
+            }
         }
 
       id++;
