@@ -592,7 +592,11 @@ int find_wall(Wall_Arg *arg, Intvl *intvl, cnt_t *profile, int plen,
       cnt_t cim1 = profile[i-1];
       cnt_t ci   = profile[i];
       if (MIN(cim1,ci) >= GLOBAL_COV[REPEAT])
-        continue;
+        { // NOTE: temporary heuristics for copy number change in R
+          // if (MAX(cim1,ci)-MIN(cim1,ci) >= 10)
+          //   set_wall_by(OTHERS,wall,i);
+          continue;
+        }
       // if (MAX(cim1,ci) >= GLOBAL_COV[REPEAT])
       //   { // Always set as a wall when entering R
       //     set_wall_by(OTHERS,wall,i);
@@ -1023,6 +1027,9 @@ int find_rel_intvl(Intvl *intvl, int N, Intvl *rintvl, cnt_t *profile, Seq_Ctx *
       correct_wall_cnt(intvl,i,profile,ctx,K);
       if (logp_trans(intvl[i].b,intvl[i].e,intvl[i].ccb,intvl[i].cce,
                      (intvl[i].ccb+intvl[i].cce)/2) < THRES_DIFF_REL)
+        continue;
+      // Exclude over-corrected intervals
+      if (MAX(intvl[i].ccb,intvl[i].cce) == MAX_KMER_CNT)
         continue;
       intvl[i].is_rel = true;
       rintvl[M] = intvl[i];

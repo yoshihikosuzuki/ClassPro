@@ -186,7 +186,7 @@ static void *kmer_class_thread(void *arg)
             sprintf(header,"@%s %s",fxseq->name.s,fxseq->comment.s);
           }
 
-#if defined(DEBUG) || defined(DEBUG_CTX) || defined(DEBUG_ERROR) || defined(DEBUG_ITER)
+#if defined(DEBUG_ITER) || defined(DEBUG_CTX) || defined(DEBUG_ERROR)
         fprintf(stderr,"\nRead %5d (%5d bp): ",id+1,rlen);
         fflush(stderr);
 #endif

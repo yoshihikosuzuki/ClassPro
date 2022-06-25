@@ -41,7 +41,7 @@ static char *Usage = "\
     -m<int(0)>   : Minimum Repeat-mer rate of a read to be shown.\n\
     -n<int(100)> : Maximum Repeat-mer rate of a read to be shown.\n\
 \n\
-  -f<int(100)>: Used for real datasets. Ignore every read with an Error-mer rate larger than this value, meaning the assembly is likely to lack some of the k-mers in the read.
+  -f<int(100)>: Used for real datasets. Ignore every read with an Error-mer rate larger than this value, meaning the assembly is likely to lack some of the k-mers in the read.\n\
   -r<int(0)>   : Used for global accuracy calculation. Reads with a Repeat-mer rate larger than this value are regarded as 'Repeat reads'.\n\
   -w<int> : If specified with a value, instead of each read, accuracy is calculated for each window of the size of this value.\n\
   -p      : Path to .prof file.\n\
