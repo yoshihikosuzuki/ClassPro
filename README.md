@@ -2,18 +2,57 @@
 
 A k-mer classification program based on read profiles (a.k.a. k-mer count profiles) computed by the [FASTK](https://github.com/thegenemyers/FASTK) k-mer counter developed by Gene Myers.
 
-- The input data should be HiFi reads.
-- We storngly assume that the ploidy of the underlying genome is **diploid**.
+- We storngly assume that the ploidy of the underlying genome is **diploid** (Extension to polyploid genomes is a future work).
+- The input data should be HiFi reads (for now).
 - The global (diploid) sequencing coverage is roughly assumed to be not too small (e.g. <10x) nor not too high (e.g. >100x).
 
-We also provide a tool for interactive visualization of read profiles (plus k-mer count histogram and k-mer classification result) [here](https://github.com/yoshihikosuzuki/kmer-profile).
+We also provide a tool for interactive visualization of read profiles (plus k-mer count histogram and k-mer classification result) [here](https://github.com/yoshihikosuzuki/kmer-profile), which will be integrated to this repository in the near future.
 
 ## How to install
+
+### From a release tarball
+
+```bash
+wget XXX
+cd ClassPro-XXX
+make
+```
+
+### From the latest source
 
 ``` bash
 git clone https://github.com/yoshihikosuzuki/ClassPro
 cd ClassPro
 make
+```
+
+## Workflow example
+
+In addition to ClassPro, you need to install FASTK (and also DAZZ_DB if you want to use `.db`/`.dam` files as input).
+
+We provide `mhc_reads.fasta` a simulation 40x HiFi reads of the human MHC region generated with [HIsim]() using a currently available complete diploid assembly (Chin et al, Nat. Comm., 2020).
+
+```bash
+FastK -v -k40 -t1 -p mhc_reads.fasta
+ClassPro -v mhc_reads
+```
+
+This is a test dataset with the ground-truth classification, and we can calculate the accuracy:
+
+```bash
+FastK -v -k40 -t1 -p mhc_haps.fasta
+FastK -v -k40 -p:mhc_haps -Nmhc_reads.truth mhc_reads.fasta
+prof2class mhc_reads.truth XXX
+class2acc mhc_reads.class mhc_reads.truth.class
+```
+
+GenomeScope-based classification:
+
+```bash
+GenomeScope
+calc_thres
+ClassGS X Y Z mhc_reads.fasta
+class2acc mhc_reads.GS.class mhc_reads.truth.class
 ```
 
 ## How to run

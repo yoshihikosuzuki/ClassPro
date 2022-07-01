@@ -1,4 +1,4 @@
-INSTALL_DIR = ~/unit-apps/ClassPro/0.3/
+INSTALL_DIR = ~/app/classpro/0.3/
 
 CC = gcc
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-function
