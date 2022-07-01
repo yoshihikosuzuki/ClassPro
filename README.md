@@ -1,8 +1,9 @@
-# ClassPro: A K-mer classifier for HiFi reads
+# ClassPro: A K-mer classifier (currently for HiFi reads)
 
-A k-mer classification program based on read profiles (a.k.a. k-mer count profiles) computed by the [FASTK](https://github.com/thegenemyers/FASTK) k-mer counter developed by Gene Myers.
+ClassPro is a k-mer classification program based on read profiles (a.k.a. k-mer count profiles) computed by the [FASTK](https://github.com/thegenemyers/FASTK) k-mer counter developed by Gene Myers.
+ClassPro classifies every k-mer in each read into one of the four types: **Erroneous, Haploid, Diploid, and Repeat**.
 
-- We storngly assume that the ploidy of the underlying genome is **diploid** (Extension to polyploid genomes is a future work).
+- We storngly assume that the ploidy of the underlying genome is **diploid**.
 - The input data should be HiFi reads (for now).
 - The global (diploid) sequencing coverage is roughly assumed to be not too small (e.g. <10x) nor not too high (e.g. >100x).
 
@@ -26,36 +27,45 @@ cd ClassPro
 make
 ```
 
-## Workflow example
+After generating binary executables, in some way you need to make the executables and shell scripts seen via `$PATH`. One choice is to use `$ make install` after edting `INSTALL_DIR` in `Makefile`.
 
-In addition to ClassPro, you need to install FASTK (and also DAZZ_DB if you want to use `.db`/`.dam` files as input).
+In addition to ClassPro, you need to install [FASTK](https://github.com/thegenemyers/FASTK) to generate input files for ClassPro (i.e. count histogram and count profiles).
+You also need to install [DAZZ_DB](https://github.com/thegenemyers/DAZZ_DB) if you want to use `.db`/`.dam` files as input (instead of `.fastx[.gz]` files).
 
-We provide `mhc_reads.fasta` a simulation 40x HiFi reads of the human MHC region generated with [HIsim]() using a currently available complete diploid assembly (Chin et al, Nat. Comm., 2020).
+## Example work flow
+
+In the `test/` directory, we put an example bash script to run ClassPro (and other related commands) for a simulation dataset.
+
+First move to `test/` and download the data files by:
 
 ```bash
-FastK -v -k40 -t1 -p mhc_reads.fasta
+. 0-download.sh
+```
+
+and then `mhc_genome.fasta.gz` (a currently available complete diploid assembly of the human MHC region by [Chin et al](https://www.nature.com/articles/s41467-020-18564-9)) and `mhc_reads.fasta` (a simulation 40x HiFi reads generated from the assembly) are downloaded.
+
+The other script, `1-run.sh`, contains commands to 1) run ClassPro, 2) evaluate ClassPro's classification using the ground-truth haplotype sequences in the assembly, 3) run GenomeScope, and 4) evaluate GenomeScope's classification.
+
+For example, the commands to run ClassPro are as follows:
+
+```bash
+FastK -v -k40 -t1 -p mhc_reads.fasta.gz
 ClassPro -v mhc_reads
 ```
 
-This is a test dataset with the ground-truth classification, and we can calculate the accuracy:
+which generate the output file named `mhc_reads.class`. This is a fastq-like file where each character in the quality field represents the classification of the k-mer ending at the position and is one of `E`(rror), `H`(aploid), `D`(diploid), `R`(epeat), or `N` (for the first k-1 bases where k-mers are undefined):
 
-```bash
-FastK -v -k40 -t1 -p mhc_haps.fasta
-FastK -v -k40 -p:mhc_haps -Nmhc_reads.truth mhc_reads.fasta
-prof2class mhc_reads.truth XXX
-class2acc mhc_reads.class mhc_reads.truth.class
+```
+@Sim 1 1 + 42 18909
+GGACAACAGGCTTGCGCCATCACTGGAGCTGTTCTTAAATTTTTTTAGAGTT...
++
+NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNHHHHHHHHHHHHH...
+...
 ```
 
-GenomeScope-based classification:
+Note that you need to install [GenomeScope2.0](https://github.com/tbenavi1/genomescope2.0) and [DAZZ_DB](https://github.com/thegenemyers/DAZZ_DB) to run GenomeScope part of the script.
 
-```bash
-GenomeScope
-calc_thres
-ClassGS X Y Z mhc_reads.fasta
-class2acc mhc_reads.GS.class mhc_reads.truth.class
-```
-
-## How to run
+## `ClassPro`: The main command
 
 ```text
 ClassPro [-vs] [-c<int>] [-r<int(20000)>] [-N<fastk_root>]
@@ -81,7 +91,7 @@ ClassPro [-vs] [-c<int>] [-r<int(20000)>] [-N<fastk_root>]
 
 - A fastq-like file `<fastk_root>.class` where the classification results (which is a sequence of {`E`,`H`,`D`,`R`} preceded by the first (K-1) `N`) are written instead of the quality score values.
 
----
+## Other programs and scripts
 
 Other than `ClassPro`, the following programs are compiled for evaluation etc.:
 
@@ -93,10 +103,12 @@ Other than `ClassPro`, the following programs are compiled for evaluation etc.:
 
 ## Limitations
 
-- ClassPro cannot be accurate for noisy reads (at least in the current implementation) because it leverages the coherence principle of read profiles for k-mer classificaion. High noise violates this principle.
-- Low-copy (>2) repeat-mers are one of the most dificult types for ClassPro. For example, if all the k-mers except error-mers in a single read profile are three-copy repeat-mers with an average count of 60 given the average diploid sequencing coverage is 40, then it is very possible that those k-mers are diplo-mers rather than repeat-mers, and vice versa. Thus, the classification accuracy tends to be low around such regions. This is not so much harmful for read alignment and genome assembly, but is for direct identification of haplotype-specific k-mers from the k-mer classification.
+- In the current implementation ClassPro assumes only HiFi reads as input and the same performance is not guaranteed for noisy reads such as ONT reads. We are currently working on this.
+- We do not accept polyploid genomes. Generalization to polyploid genomes is one future direction, although it will take some time.
 
 ## TODOs
 
-- For an initial separation between diplo-mers and repeat-mers, ClassPro uses a loose threshold $\theta_{\text R}$ between diplo-mers and repeat-mers, where $\theta_{\text R} := c_{\text D}$ + `N_SIGMA_RCOV` * $\sqrt{c_{\text D}}$ and `N_SIGMA_RCOV` is a hyperparameter defined in `const.c`, and ClassPro does not find a wall inside repeat regions. When k-mer counts are gradually increasing from $<\theta_{\text R}$ to $>\theta_{\text R}$, the current implementation does not recognize intervals around the boundary well.
+- For an initial separation between diplo-mers and repeat-mers, ClassPro uses a loose threshold $\theta_{\text R}$ between diplo-mers and repeat-mers, where $\theta_{\text R} := c_{\text D}$ + `N_SIGMA_RCOV` * $\sqrt{c_{\text D}}$ and `N_SIGMA_RCOV` is a hyperparameter defined in `const.c`, and ClassPro does not find a wall inside repeat regions. When k-mer counts are gradually increasing from $<\theta_{\text R}$ to $>\theta_{\text R}$, the current implementation does not recognize intervals around the boundary well. Fix this.
 - Integrate the profile visualizer into this repository.
+- Accept fastx input in ClassGS
+- Efficient generation of consensus k-mer classifications.
