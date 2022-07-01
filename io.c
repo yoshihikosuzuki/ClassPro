@@ -144,11 +144,11 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
       paramm[c].onames = Malloc(sizeof(char *)*arg->nthreads,"Allocating fnames");
       for (int t = 0; t < arg->nthreads; t++)
         { paramm[c].onames[t] = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
-          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",arg->tmp_path,o.sep,root,o.suf,t+1);
+          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",arg->tmp_path,o.sep,arg->out_root,o.suf,t+1);
         }
 
       paramm[c].ofinal = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
-      sprintf(paramm[c].ofinal,"%s%s%s%s",path,o.sep,root,o.suf);
+      sprintf(paramm[c].ofinal,"%s%s%s%s",path,o.sep,arg->out_root,o.suf);
 
       paramm[c].nfiles = arg->nthreads;
       paramm[c].is_bin = o.is_bin;
@@ -326,11 +326,11 @@ static void prepare_fx(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
       paramm[c].onames = Malloc(sizeof(char *)*arg->nthreads,"Allocating fnames");
       for (int t = 0; t < arg->nthreads; t++)
         { paramm[c].onames[t] = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
-          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",arg->tmp_path,o.sep,root,o.suf,t+1);
+          sprintf(paramm[c].onames[t],"%s%s%s%s.%d",arg->tmp_path,o.sep,arg->out_root,o.suf,t+1);
         }
 
       paramm[c].ofinal = Malloc(sizeof(char)*MAX_FN,"Allocating fname");
-      sprintf(paramm[c].ofinal,"%s%s%s%s",path,o.sep,root,o.suf);
+      sprintf(paramm[c].ofinal,"%s%s%s%s",path,o.sep,arg->out_root,o.suf);
 
       paramm[c].nfiles = arg->nthreads;
       paramm[c].is_bin = o.is_bin;

@@ -306,6 +306,7 @@ typedef struct
     char **snames;       // `<source>`; List of input sequence file names
     char  *tmp_path;     // `-P` option
     char  *fk_root;      // `-N` option
+    char  *out_root;     // `out_root`.class is the output file
     char  *model_path;   // `-M` option
     bool   is_db;        // .db or .dam input?
     bool   is_dam;       // .dam?

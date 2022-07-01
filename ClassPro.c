@@ -349,6 +349,7 @@ static Arg *parse_arg(int argc, char *argv[])
   arg->rlen     = (int)DEFAULT_RLEN;
   arg->tmp_path = (char *)DEFAULT_TMP_PATH;
   arg->fk_root  = NULL;
+  arg->out_root = NULL;
   arg->model_path  = NULL;
   
   j = 1;
@@ -402,7 +403,10 @@ static Arg *parse_arg(int argc, char *argv[])
     for (idx = 0; idx < N_EXT; idx++)
       { root  = Root(argv[1],EXT[idx]);
         fid   = open(Catenate(path,"/",root,EXT[idx]),O_RDONLY);
-        if (fid >= 0) break;
+        if (fid >= 0)
+          { arg->out_root = Strdup(root,"Set out_root");
+            break;
+          }
         free(root);
       }
     if (idx == N_EXT || fid < 0)
@@ -432,6 +436,7 @@ static Arg *parse_arg(int argc, char *argv[])
       { fprintf(stderr,"    # of sequence files   = %d\n",arg->nfiles);
         fprintf(stderr,"    First (path,root,ext) = (%s, %s, %s)\n",path,root,EXT[idx]);
         fprintf(stderr,"    FASTK outputs' root   = %s\n",arg->fk_root);
+        fprintf(stderr,"    Otput .class file     = %s/%s.class\n",path,arg->out_root);
       }
 
     // Set full path
