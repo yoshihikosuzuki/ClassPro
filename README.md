@@ -11,22 +11,7 @@ We also provide a tool for interactive visualization of read profiles (plus k-me
 
 ## How to install
 
-### From a release tarball
-
-```bash
-wget XXX
-cd ClassPro-XXX
-make
-```
-
-### From the latest source
-
-``` bash
-git clone https://github.com/yoshihikosuzuki/ClassPro
-cd ClassPro
-make
-```
-
+Download a release and `$ make` it.
 After generating binary executables, in some way you need to make the executables and shell scripts seen via `$PATH`. One choice is to use `$ make install` after edting `INSTALL_DIR` in `Makefile`.
 
 In addition to ClassPro, you need to install [FASTK](https://github.com/thegenemyers/FASTK) to generate input files for ClassPro (i.e. count histogram and count profiles).
@@ -34,15 +19,13 @@ You also need to install [DAZZ_DB](https://github.com/thegenemyers/DAZZ_DB) if y
 
 ## Example work flow
 
-In the `test/` directory, we put an example bash script to run ClassPro (and other related commands) for a simulation dataset.
+In the `test/` directory, we put example bash scripts to run ClassPro (and other related commands) for a simulation dataset.
 
-First move to `test/` and download the data files by:
+First move to `test/` and download `mhc_genome.fasta.gz` (a currently available complete diploid assembly of the human MHC region by [Chin et al](https://www.nature.com/articles/s41467-020-18564-9)) and `mhc_reads.fasta` (a simulation 40x HiFi reads generated from the assembly using [HIsim](https://github.com/thegenemyers/HI.SIM)) by running:
 
 ```bash
 . 0-download.sh
 ```
-
-and then `mhc_genome.fasta.gz` (a currently available complete diploid assembly of the human MHC region by [Chin et al](https://www.nature.com/articles/s41467-020-18564-9)) and `mhc_reads.fasta` (a simulation 40x HiFi reads generated from the assembly using [HIsim](https://github.com/thegenemyers/HI.SIM)) are downloaded.
 
 The other script, `1-run.sh`, contains commands to 1) run ClassPro, 2) evaluate ClassPro's classification using the ground-truth haplotype sequences in the assembly, 3) run GenomeScope, and 4) evaluate GenomeScope's classification.
 
@@ -67,7 +50,7 @@ NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNDDDDDDDDDDDDD...
 ...
 ```
 
-Note that you need to install [GenomeScope2.0](https://github.com/tbenavi1/genomescope2.0) and [DAZZ_DB](https://github.com/thegenemyers/DAZZ_DB) to run GenomeScope part of the script.
+Note that you need to install [GenomeScope2.0](https://github.com/tbenavi1/genomescope2.0) and [DAZZ_DB](https://github.com/thegenemyers/DAZZ_DB) to run the GenomeScope part of the script.
 
 ## `ClassPro`: The main command
 

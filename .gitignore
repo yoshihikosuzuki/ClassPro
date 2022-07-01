@@ -10,6 +10,7 @@ gsl-2.7/
 
 test/
 !test/*.sh
+.github/
 
 *.old.c
 hoge.c
