@@ -9,7 +9,7 @@ gsl-2.7/
 */Makefile
 
 test/
-+test/*.sh
+!test/*.sh
 
 *.old.c
 hoge.c
