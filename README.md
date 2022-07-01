@@ -42,7 +42,7 @@ First move to `test/` and download the data files by:
 . 0-download.sh
 ```
 
-and then `mhc_genome.fasta.gz` (a currently available complete diploid assembly of the human MHC region by [Chin et al](https://www.nature.com/articles/s41467-020-18564-9)) and `mhc_reads.fasta` (a simulation 40x HiFi reads generated from the assembly) are downloaded.
+and then `mhc_genome.fasta.gz` (a currently available complete diploid assembly of the human MHC region by [Chin et al](https://www.nature.com/articles/s41467-020-18564-9)) and `mhc_reads.fasta` (a simulation 40x HiFi reads generated from the assembly using [HIsim](https://github.com/thegenemyers/HI.SIM)) are downloaded.
 
 The other script, `1-run.sh`, contains commands to 1) run ClassPro, 2) evaluate ClassPro's classification using the ground-truth haplotype sequences in the assembly, 3) run GenomeScope, and 4) evaluate GenomeScope's classification.
 
@@ -60,6 +60,10 @@ which generate the output file named `mhc_reads.class`. This is a fastq-like fil
 GGACAACAGGCTTGCGCCATCACTGGAGCTGTTCTTAAATTTTTTTAGAGTT...
 +
 NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNHHHHHHHHHHHHH...
+@Sim 1 1 - 2007 21732
+GGCTAACACGGTGAAACCCTGTCTTTACTAAAAGTACAAAAAAAAAAATTAG...
++
+NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNDDDDDDDDDDDDD...
 ...
 ```
 
@@ -68,9 +72,9 @@ Note that you need to install [GenomeScope2.0](https://github.com/tbenavi1/genom
 ## `ClassPro`: The main command
 
 ```text
-ClassPro [-vs] [-c<int>] [-r<int(20000)>] [-N<fastk_root>]
-         [-P<tmp_dir(/tmp)>] [-T<int(4)>]
-         <source>[.db|.f[ast][aq][.gz]]
+ClassPro [-vs] [-T<int(4)>] [-c<int>] [-r<int(20000)>]
+         [-P<tmp_dir(./)>] [-N<fastk_root>] [-M<model_path>]
+         <source>[.db|.dam|.f[ast][aq][.gz]
 ```
 
 **Mandatory arguments**:
@@ -83,6 +87,7 @@ ClassPro [-vs] [-c<int>] [-r<int(20000)>] [-N<fastk_root>]
 - `-T`: Number of threads used. Typically there will be almost no gain with a number larger than 16 given a single SSD because of IO bottleneck (with the current implementation, which might be improved in the future).
 - `-P`: Path to the temporary directory where intermediate files are generated.
 - `-N`: Base name of the output files of FASTK executed with `<source>`. If not specified, it is automatically inferred by the file name of `<source>`. There must exist both `<fastk_root>.hist` and `<fastk_root>.prof` (and the hidden files associated with them).
+- `-M`: Path to a [HIsim](https://github.com/thegenemyers/HI.SIM)'s error model file. If not specified, then the default model is used, which usually works well.
 - `-c`: Average sequencing coverage (per diploid; = total bases in reads / haploid genome size). If not specified, it is automatically estimated from the k-mer count histogram, which typically works well.
 - `-r`: Average read length in bases. A rough estimate is fine.
 - `-s`: If specified, ClassPro also finds seeds for alignment based on the classification result. [Preliminary feature]
