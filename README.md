@@ -101,7 +101,7 @@ ClassPro [-vs] [-T<int(4)>] [-c<int>] [-r<int(20000)>]
 Other than `ClassPro`, the following programs are compiled for evaluation etc.:
 
 - `ClassGS`: Classification based on the global k-mer count thresholds computed by GenomeScope.
-  - `$ genomescope_thresholds.sh <path-to-genomescope-out-dir>` will extract the values of the thresholds (**NOTE**: GenomeScope must be run with the `--fitted_hist` option. An example command is written in the shell script).
+  - `$ genomescope_thresholds.sh <path-to-genomescope-out-dir>` will extract the values of the thresholds (**NOTE**: GenomeScope must be run with the `--fitted_hist` option. An example command is written in this script file and also in `test/1-run.sh`).
 - `prof2class`: Given a read dataset and a relative profile of the reads against the underlying genome, generate the classification file based on the relative k-mer counts. If the relative profile is generated with the complete genome from which the reads are sampled (e.g. simulation), then the classification can be used as the ground truth of the k-mer classification.
 - `class2acc`: Given a classification file (by ClassPro, ClassGS, etc.) and the ground-truth classification file, calculate the accuracy of the classification.
 - `class2cns`: Given a classification file, generate the consensus of classifications for ecah distinct k-mer. [**Under development; Currently very inefficient implementation**]
