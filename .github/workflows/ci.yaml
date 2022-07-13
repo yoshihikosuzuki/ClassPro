@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  create_release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+
+  add_precompiled:
+    needs: create_release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            os_name: linux
+          - os: macos-latest
+            os_name: macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Compile
+        run:  make
+      - name: Tarball
+        run: tar zcvf release.tar.gz *
+      - name: Add
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_path: release.tar.gz
+          asset_name: classpro-${{ github.ref_name }}_${{ matrix.os_name }}.tar.gz
+          asset_content_type: application/gzip
