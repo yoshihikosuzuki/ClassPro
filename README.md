@@ -100,3 +100,7 @@ Other than `ClassPro`, the following programs are compiled for evaluation etc.:
 - Integrate the profile visualizer into this repository.
 - Accept fastx input in ClassGS
 - Efficient generation of consensus k-mer classifications.
+
+## Citation
+
+Yoshihiko Suzuki and Gene Myers. Accurate K-mer Classification Using Read Profiles. [WABI 2022](https://algo2022.eu/wabi/). (Accepted Paper)
