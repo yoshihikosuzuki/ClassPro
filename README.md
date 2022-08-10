@@ -7,15 +7,16 @@ ClassPro classifies every k-mer in each read into one of the four types: **Erron
 - The input data should be HiFi reads (for now).
 - The global (diploid) sequencing coverage is roughly assumed to be not too small (e.g. <10x) nor not too high (e.g. >100x).
 
-We also provide a tool for interactive visualization of read profiles (plus k-mer count histogram and k-mer classification result) [here](https://github.com/yoshihikosuzuki/kmer-profile), which will be integrated to this repository in the near future.
-
 ## How to install
 
-Download a release and `$ make` it.
-After generating binary executables, in some way you need to make the executables and shell scripts seen via `$PATH`. One choice is to use `$ make install` after edting `INSTALL_DIR` in `Makefile`.
+You can download a tarball of precompiled binaries from [Releases](https://github.com/yoshihikosuzuki/ClassPro/releases).
+
+Or you can compile source codes downloaded from [Releases](https://github.com/yoshihikosuzuki/ClassPro/releases) or by doing `$ git clone`, with a simple `$ make` command.
 
 In addition to ClassPro, you need to install [FASTK](https://github.com/thegenemyers/FASTK) to generate input files for ClassPro (i.e. count histogram and count profiles).
 You also need to install [DAZZ_DB](https://github.com/thegenemyers/DAZZ_DB) if you want to use `.db`/`.dam` files as input (instead of `.fastx[.gz]` files).
+
+We also provide a tool for interactive visualization of read profiles (plus k-mer count histogram and k-mer classification result) [here](https://github.com/yoshihikosuzuki/kmer-profile), which will be integrated to this repository in the near future.
 
 ## Example work flow
 
