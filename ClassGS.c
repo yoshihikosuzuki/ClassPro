@@ -22,9 +22,6 @@ char *EXT[N_EXT] = { ".db", ".dam",
                      ".fastq", ".fasta", ".fq", ".fa",
                      ".fastq.gz", ".fasta.gz", ".fq.gz", ".fa.gz" };
 
-bool IS_DB;
-bool IS_DAM;
-
 int main(int argc, char *argv[])
 { Profile_Index *P;
 
@@ -51,10 +48,7 @@ int main(int argc, char *argv[])
   { int    i, j, k;
     int    flags[128];
     char  *eptr;
-
     (void) flags;
-
-    char  *path, *root;
     int    fid;
 
     ARG_INIT("ClassGS");
@@ -82,12 +76,9 @@ int main(int argc, char *argv[])
 
     fprintf(stderr,"E < %d <= H < %d <= D < %d <= R\n",THRES[0],THRES[1],THRES[2]);
 
-    root = Root(argv[1],NULL);
-    path = PathTo(argv[1]);
     for (ext = 0; ext < N_EXT; ext++)
-      { fid   = open(Catenate(path,"/",root,EXT[ext]),O_RDONLY);
+      { fid   = open(Catenate(argv[1],"","",EXT[ext]),O_RDONLY);
         if (fid >= 0) break;
-        free(root);
       }
     if (ext == N_EXT || fid < 0)
       { fprintf(stderr,"Cannot open %s[.db|.dam|.f{ast}[aq][.gz]] as a file\n",argv[1]);
@@ -95,17 +86,16 @@ int main(int argc, char *argv[])
       }
     close(fid);
 
-    is_db  = (idx <= 1);
-    is_dam = (idx == 1);
+    is_db  = (ext <= 1);
+    is_dam = (ext == 1);
 
-    cfile = Fopen(Catenate(path,"/",root,".GS.class"),"w");
+    cfile = Fopen(Catenate(argv[1],"","",".GS.class"),"w");
 
-    free(root);
-    free(path);
+    fprintf(stderr,"Input = %s%s, Output = %s.GS.class\n",argv[1],EXT[ext],argv[1]);
   }
 
   // Open files
-  { if (P = Open_Profiles(argv[1]) == NULL)
+  { if ((P = Open_Profiles(argv[1])) == NULL)
       { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,argv[1]);
         exit (1);
       }
@@ -153,9 +143,9 @@ int main(int argc, char *argv[])
         free(pwd);
       }
     else
-      { fxfp = gzopen(Catenate(argv[1],EXT[ext]), "r");
+      { fxfp = gzopen(Catenate(argv[1],"","",EXT[ext]), "r");
         if (fxfp == NULL)
-          { fprintf(stderr,"%s: Cannot open %s [errno=%d]\n",Prog_Name,Catenate(argv[1],EXT[ext]),errno);
+          { fprintf(stderr,"%s: Cannot open %s%s [errno=%d]\n",Prog_Name,argv[1],EXT[ext],errno);
             exit (1);
           }
         fxseq = kseq_init(fxfp);
