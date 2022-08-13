@@ -6,7 +6,7 @@
  * British Columbia Cancer Agency
  */
 
-// NOTE by Y.S.: ntHash v2.2.0 does not give a consistent hash value for the same forward k-mer when k >= 32 (revcomp & k < 32 are ok). This is v2.1.0
+// NOTE by Y.S.: ntHash v2.1.0 with modifications for C
 
 #ifndef NT_HASH_H
 #define NT_HASH_H
