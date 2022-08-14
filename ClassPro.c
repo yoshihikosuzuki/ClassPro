@@ -85,8 +85,6 @@ static void *kmer_class_thread(void *arg)
       tidx     = 0;
       track    = New_Read_Buffer(db);
       crack    = track + Km1;
-      for (int i = 0; i < Km1; i++)
-        track[i] = 0;
 #endif
       if (!IS_DAM)
         { stub  = data->stub;
@@ -139,7 +137,7 @@ static void *kmer_class_thread(void *arg)
 
   // For each read, do classification
   for (int id = data->beg; id < data->end; id++)
-    { 
+    {
 #ifdef DEBUG_SINGLE
       if (id+1 < DEBUG_SINGLE_ID)
         { if (!IS_DB)
@@ -148,6 +146,12 @@ static void *kmer_class_thread(void *arg)
         }
       else if (DEBUG_SINGLE_ID < id+1)
         goto class_exit;
+#endif
+
+#ifdef WRITE_TRACK
+      if (IS_DB)
+        for (int i = 0; i < Km1; i++)
+          track[i] = 0;
 #endif
 
       // 1. Load sequence and header
@@ -212,6 +216,7 @@ static void *kmer_class_thread(void *arg)
 #endif
 
             fprintf(data->cfile,"%s\n%s\n+\n%*s\n",header,seq,rlen,rasgn);
+
 #ifdef WRITE_TRACK
             if (IS_DB)
               { Compress_Read(rlen,track);
@@ -221,6 +226,7 @@ static void *kmer_class_thread(void *arg)
                 fwrite(&tidx,sizeof(int64),1,data->afile);
               }
 #endif
+
             continue;
           }
       }
@@ -269,9 +275,14 @@ static void *kmer_class_thread(void *arg)
           }
         rasgn[rlen] = '\0';
         // remove_slip(pasgn,profile,plen,ctx);
+
+        // printf("r");
+        // for (int i = 0; i < rlen; i++)
+        //   printf("%c",rasgn[i]);
+        // printf("\n");
       }
 
-      // (Optional) Find seeds for alignment
+      // Find seeds for alignment
       if (FIND_SEED)
         find_seeds(seq,profile,pasgn,plen,K,sasgn,hash,Q);
 
@@ -285,6 +296,12 @@ static void *kmer_class_thread(void *arg)
         if (IS_DB)
           { for (int i = 0; i < plen; i++)
               crack[i] = (FIND_SEED) ? ctos[sasgn[i]] : ctos[(int)pasgn[i]];
+
+            // printf("t");
+            // for (int i = 0; i < rlen; i++)
+            //   printf("%d",track[i]);
+            // printf("\n");
+
             Compress_Read(rlen,track);
             int t = COMPRESSED_LEN(rlen);
             fwrite(track,1,t,data->dfile);
@@ -351,7 +368,7 @@ static Arg *parse_arg(int argc, char *argv[])
   arg->fk_root  = NULL;
   arg->out_root = NULL;
   arg->model_path  = NULL;
-  
+
   j = 1;
   for (i = 1; i < argc; i++)
     if (argv[i][0] == '-')
@@ -393,7 +410,7 @@ static Arg *parse_arg(int argc, char *argv[])
 
   if (arg->verbose)
     fprintf(stderr,"Info about inputs:\n");
-  
+
   // Input file names
   { int    fid, idx;
     char  *path, *root;
@@ -482,7 +499,7 @@ static Arg *parse_arg(int argc, char *argv[])
         exit (1);
       }
     closedir(dirp);
-    
+
     if (arg->verbose)
       fprintf(stderr,"    Temp dir path         = %s\n",arg->tmp_path);
   }
@@ -507,7 +524,7 @@ int main(int argc, char *argv[])
     paramm   = Malloc(sizeof(Merge_Arg)*N_OTYPE,"Allocate merge args");
     threads  = Malloc(sizeof(pthread_t)*arg->nthreads,"Allocating class threads");
   }
-  
+
   // Precompute several values
   { // 1. Number of reads processed per thread
     if ((P = Open_Profiles(arg->fk_root)) == NULL)
@@ -561,7 +578,7 @@ int main(int argc, char *argv[])
   // Main classification routine
   { if (arg->verbose)
       fprintf(stderr,"Classifying %d-mers%s...\n",P->kmer,arg->find_seeds ? " & Finding seeds" : "");
-    
+
     for (int t = 1; t < arg->nthreads; t++)
       pthread_create(threads+t,NULL,kmer_class_thread,paramc+t);
     kmer_class_thread(paramc);

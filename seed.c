@@ -165,7 +165,7 @@ static inline void count_maximizer(const char *seq, const uint16 *profile, const
 #endif
 
   // kdq_destroy(hmer_t,Q);
-  
+
   return;
 }
 
@@ -324,10 +324,15 @@ static void _find_seeds(const char *seq, const uint16 *profile, const char *clas
 // NOTE: len(profile) == len(class) == plen, len(_seq) = plen + K - 1
 // NOTE: class[i] in {'E', 'H', 'D', 'R'}
 void find_seeds(const char *_seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn, int *hash, kdq_t(hmer_t) *Q)
-{ 
+{
 #if defined(DEBUG_SEED) || defined(INFO_SEED)
   fprintf(stderr,"\n");
 #endif
+
+  // printf("c");
+  // for (int i = -(K-1); i < plen; i++)
+  //   printf("%c",class[i]);
+  // printf("\n");
 
   const char *seq = _seq+K-1;   // kmer seq @ i on profile = seq[i-K+1]..seq[i]
   // Compute canonical hash for every k-mer
@@ -339,19 +344,36 @@ void find_seeds(const char *_seq, const uint16 *profile, const char *class, cons
 
   // change flag value
   for (int i = 0; i < plen; i++)
-    sasgn[i] = (sasgn[i] == -2) ? class[i] : 'E';
+    { // sasgn[i] = (sasgn[i] == -2) ? class[i] : 'E';
+      if (sasgn[i] == -2)   // H/D-seed
+        sasgn[i] = class[i];
+      else if (class[i] == 'E')
+        sasgn[i] = 'E';
+      else
+        sasgn[i] = 'R';
+    }
+
+  // printf("s");
+  // for (int i = 0; i < K-1; i++)
+  //   printf(" ");
+  // for (int i = 0; i < plen; i++)
+  //   printf("%c",sasgn[i]);
+  // printf("\n");
 
 #ifdef DEBUG_SEED
   for (int i = 0; i < plen; i++)
-    if (sasgn[i] != 'E') fprintf(stderr,"seed(%c) @ %5d: kmer = %.*s, count = %d\n",class[i],i,K,seq+i-K+1,profile[i]);
+    if (sasgn[i] == 'H' || sasgn[i] == 'D')
+      fprintf(stderr,"seed(%c) @ %5d: kmer = %.*s, count = %d\n",class[i],i,K,seq+i-K+1,profile[i]);
 #endif
 
 #ifdef DEBUG_ITER
-  { int c = 0;
+  { int c = 0, e = 0;
     for (int i = 0; i < plen; i++)
-      if (sasgn[i] != 'E') c++;
-    fprintf(stderr,", %3d seeds",c);
+      { if (sasgn[i] == 'H' || sasgn[i] == 'D') c++;
+        else if (sasgn[i] == 'E') e++;
+      }
+    fprintf(stderr,", %3d seeds, %3d errors",c,e);
   }
 #endif
-  return; 
+  return;
 }
