@@ -98,9 +98,8 @@ Other than `ClassPro`, the following programs are compiled for evaluation etc.:
 
 - For an initial separation between diplo-mers and repeat-mers, ClassPro uses a loose threshold $\theta_{\text R}$ between diplo-mers and repeat-mers, where $\theta_{\text R} := c_{\text D}$ + `N_SIGMA_RCOV` * $\sqrt{c_{\text D}}$ and `N_SIGMA_RCOV` is a hyperparameter defined in `const.c`, and ClassPro does not find a wall inside repeat regions. When k-mer counts are gradually increasing from $<\theta_{\text R}$ to $>\theta_{\text R}$, the current implementation does not recognize intervals around the boundary well. Fix this.
 - Integrate the profile visualizer into this repository.
-- Accept fastx input in ClassGS
 - Efficient generation of consensus k-mer classifications.
 
 ## Citation
 
-Yoshihiko Suzuki and Gene Myers. Accurate K-mer Classification Using Read Profiles. [WABI 2022](https://algo2022.eu/wabi/). (Accepted Paper)
+Yoshihiko Suzuki and Gene Myers. Accurate K-mer Classification Using Read Profiles. [WABI 2022](https://algo2022.eu/wabi/). [doi:10.4230/LIPIcs.WABI.2022.10](https://doi.org/10.4230/LIPIcs.WABI.2022.10)
