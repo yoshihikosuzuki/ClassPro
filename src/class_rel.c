@@ -728,7 +728,7 @@ Iter_Rel classify_rel_fw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
     }
   int d_diff = (first_d_idx >= 0) ? abs(rintvl[first_d_idx].ccb-rintvl[last_d_idx].cce) : 0;
   int h_diff = (first_h_idx >= 0) ? abs(rintvl[first_h_idx].ccb-rintvl[last_h_idx].cce) : 0;
-  double hdrr = (first_d_idx >= 0 && first_h_idx >= 0) ? ((double)rintvl[first_d_idx].ccb/rintvl[first_h_idx].ccb)/((double)rintvl[last_d_idx].cce/rintvl[first_h_idx].cce) : 1.;
+  double hdrr = (first_d_idx >= 0 && first_h_idx >= 0) ? ((double)rintvl[first_d_idx].ccb/rintvl[first_h_idx].ccb)/((double)rintvl[last_d_idx].cce/rintvl[last_h_idx].cce) : 1.;
 
   Iter_Rel ret = { asgn, d_diff, h_diff, hdrr };
   return ret;
@@ -838,7 +838,7 @@ Iter_Rel classify_rel_bw(Rel_Arg *arg, Intvl *rintvl, int M, int plen)
     }
   int d_diff = (first_d_idx >= 0) ? abs(rintvl[first_d_idx].ccb-rintvl[last_d_idx].cce) : 0;
   int h_diff = (first_h_idx >= 0) ? abs(rintvl[first_h_idx].ccb-rintvl[last_h_idx].cce) : 0;
-  double hdrr = (first_d_idx >= 0 && first_h_idx >= 0) ? ((double)rintvl[first_d_idx].ccb/rintvl[first_h_idx].ccb)/((double)rintvl[last_d_idx].cce/rintvl[first_h_idx].cce) : 1;
+  double hdrr = (first_d_idx >= 0 && first_h_idx >= 0) ? ((double)rintvl[first_d_idx].ccb/rintvl[first_h_idx].ccb)/((double)rintvl[last_d_idx].cce/rintvl[last_h_idx].cce) : 1;
 
   Iter_Rel ret = { asgn, d_diff, h_diff, hdrr };
   return ret;

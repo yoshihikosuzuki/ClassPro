@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 
 #include "ClassPro.h"
+#include "benchmark.h"
 
 #include "const.c"
 #include "io.c"
@@ -22,7 +23,6 @@
 #include "class_rel.c"
 #include "class_unrel.c"
 #include "seed.c"
-// #include "seed_naive.c"
 
 bool  VERBOSE;
 int   READ_LEN;
@@ -156,12 +156,10 @@ static void *kmer_class_thread(void *arg)
 
       // 1. Load sequence and header
       { if (IS_DB)
-          { // sequence
-            r = db->reads+id;
+          { r = db->reads+id;
             rlen = r->rlen;
             Load_Read(db,id,seq,2);
 
-            // header
             if (!IS_DAM)
               { while (id < findx[map-1])
                   map -= 1;
@@ -177,16 +175,13 @@ static void *kmer_class_thread(void *arg)
               }
           }
         else   // FASTX
-          { // sequence
-            kseq_read(fxseq);
+          { kseq_read(fxseq);
             rlen = fxseq->seq.l;
             seq = (char *)fxseq->seq.s;
             if (rlen > MAX_READ_LEN)   // TODO: realloc when exceeded
               { fprintf(stderr,"rlen (%d) > MAX_READ_LEN for FASTX inputs (%d)\n",rlen,MAX_READ_LEN);
                 exit(1);
               }
-
-            // header
             sprintf(header,"@%s %s",fxseq->name.s,fxseq->comment.s);
           }
 
@@ -508,7 +503,9 @@ static Arg *parse_arg(int argc, char *argv[])
 }
 
 int main(int argc, char *argv[])
-{ Arg           *arg;
+{ startTime();
+
+  Arg           *arg;
   Class_Arg     *paramc;
   Merge_Arg     *paramm;
   pthread_t     *threads;
@@ -586,6 +583,9 @@ int main(int argc, char *argv[])
       pthread_join(threads[t],NULL);
   }
 
+  if (arg->verbose)
+    timeTo(stderr,false);
+
 #ifdef DEBUG_SINGLE
   return 0;
 #endif
@@ -632,6 +632,9 @@ int main(int argc, char *argv[])
     Numbered_Suffix(NULL,0,NULL);
     free(Prog_Name);
   }
+
+  if (arg->verbose)
+    timeTo(stderr,true);
 
   return 0;
 }
