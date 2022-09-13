@@ -9,9 +9,10 @@
 #undef DEBUG_COMPRESS
 #undef DEBUG_QUEUE
 #define DEBUG_SEED
-#define DEBUG_SELECT
+#undef DEBUG_SEGMENT
+#undef DEBUG_SELECT
 #undef TIME_SEED
-#undef INFO_SEED
+#define INFO_SEED
 
 #define WSIZE 1000
 #define MOD 10009
@@ -521,7 +522,7 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
       if (kdq_size(Q) == 0) continue;
 
       // Now the leftmost element in the deque is the maximizer in the current window.
-      // Increament `sasgn` so that `sasgn[i]` := # of windows in which k-mer at `i` is the maximizer.
+      // Increament `nw` so that `seg.nw` := # of windows in which the count is max.
       e = kdq_at(Q, 0);
       cprofile[e.seg_id].nw++;
 
@@ -542,7 +543,7 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
 #endif
     }   // for (int i = 0; i < plen; i++)
 
-#ifdef DEBUG_SEED
+#ifdef DEBUG_SEGMENT
 //   fprintf(stderr,"# of segments = %d\n",N);
 //   for (int i = 0; i < N; i++)
 //     fprintf(stderr,"seg[%d] (%d, %d) cnt = %d, # = %d\n",i,
@@ -554,6 +555,9 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
   timeTo(stderr,false);
 #endif
 
+  // Pick up segments as "seed segments" (i.e. segments with the same count from each of which
+  // minimizer(s) are selected) until the read gets covered by either invalid segments (i.e.
+  // non-`C`-segments) or seed segments.
   M = 0;
   for (int i = 0; i < N; i++)
     { if (cprofile[i].cnt == -1)
@@ -563,7 +567,7 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
         }
     }
 
-#ifdef DEBUG_SEED
+#ifdef DEBUG_SEGMENT
   fprintf(stderr,"# of invalid segments = %d\n",M);
   for (int i = 0; i < M; i++)
     fprintf(stderr,"mintvl[%d] (%d, %d)\n",i,mintvl[i].b,mintvl[i].e);
@@ -575,12 +579,12 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
   // Process from segment with the largest # of windows until the masked interval contains [0..plen]
   qsort(cprofile,N,sizeof(seg_t),compare_cprofile);
 
-#ifdef DEBUG_SELECT
-  // fprintf(stderr,"Sorted segments:\n");
-  // for (int i = 0; i < N; i++)
-  //   fprintf(stderr,"seg[%d] = [(%d, %d) cnt = %d, # = %d]\n",
-  //                  i,cprofile[i].b,cprofile[i].e,cprofile[i].cnt,cprofile[i].nw);
-  // fprintf(stderr,"\n");
+#ifdef DEBUG_SEGMENT
+  fprintf(stderr,"Sorted segments:\n");
+  for (int i = 0; i < N; i++)
+    fprintf(stderr,"seg[%d] = [(%d, %d) cnt = %d, # = %d]\n",
+                   i,cprofile[i].b,cprofile[i].e,cprofile[i].cnt,cprofile[i].nw);
+  fprintf(stderr,"\n");
 #endif
 
   for (int i = 0; i < N; i++)
@@ -592,7 +596,14 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
       if (!is_contained(mintvl,M,seg.b,seg.e))
         { M = add_intvl(mintvl,M,MAX(0,seg.b-WSIZE),MIN(seg.e+WSIZE,plen));
           cprofile[i].is_seed = true;
-          // TODO: seg is to be processed with minimizer
+
+          // Choose only minimizer(s)
+          int min_hash = MOD;
+          for (int j = seg.b; j < seg.e; j++)
+            min_hash = MIN(hash[j],min_hash);
+          for (int j = seg.b; j < seg.e; j++)
+            if (hash[j] == min_hash)
+              sasgn[j] = -2;
 
 #ifdef DEBUG_SELECT
           fprintf(stderr,"-> Seed [(%d, %d) cnt = %d, nw = %d]\n",
@@ -626,18 +637,6 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
   fprintf(stderr,"cm select\n");
   timeTo(stderr,false);
 #endif
-
-//   count_maximizer(Q,profile,sasgn,plen
-// #if defined(DEBUG_SEED) || defined(DEBUG_QUEUE) || defined(INFO_SEED)
-//                   ,seq,class,K,C
-// #endif
-//                  );
-
-//   hash_minimizer(Q,hash,sasgn,plen
-// #if defined(DEBUG_SEED) || defined(DEBUG_QUEUE) || defined(INFO_SEED)
-//                   ,profile,seq,class,K,C
-// #endif
-//                  );
 
 seed_exit:
   // Empty the queue
