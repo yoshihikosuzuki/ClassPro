@@ -38,43 +38,50 @@ static void *kmer_class_thread(void *arg)
   Error_Model   *emodel = data->emodel;
   const int      K      = P->kmer;
   const int      Km1    = K-1;
+  kdq_t(hmer_t) *Q      = kdq_init(hmer_t);
 
 #ifdef DEBUG_SINGLE
   if (DEBUG_SINGLE_ID < data->beg+1 || data->end < DEBUG_SINGLE_ID)
     goto class_exit;
 #endif
 
-  // Variables for classification
-  int            rlen_max, rlen, plen;   // `rlen` = `plen` + `Km1`
-  char          *seq = NULL;             // Fetched sequence of the read
-  cnt_t         *profile;                // Fetched profile of a read
-  Seq_Ctx       *ctx[N_WTYPE], *lctx, *_lctx, *rctx;   // Context lengths per position
-  int            N, M;                   // Number of walls/reliable intervals
-  Intvl         *intvl, *rintvl;
-  char          *rasgn, *pasgn;          // Classifications of intervals or k-mers for read and profile
-  int          *sasgn = NULL, *hash = NULL;
-  kdq_t(hmer_t) *Q = kdq_init(hmer_t);
-  Wall_Arg      *warg;
-  Rel_Arg       *rel_arg;
+  // Variables for classification   // TODO: reduce memory by reusing variables
+  int       rlen_max;
+  int       rlen, plen;        // `rlen` = `plen` + `Km1`
+  char     *seq = NULL;        // Fetched sequence of the read
+  cnt_t    *profile;           // Fetched profile of a read
+  Seq_Ctx  *ctx[N_WTYPE];      // Context lengths per position
+  Seq_Ctx  *lctx, *_lctx;
+  Seq_Ctx  *rctx;
+  int       N, M;              // Number of walls/reliable intervals
+  Intvl    *intvl, *rintvl;
+  char     *rasgn, *pasgn;     // Classifications of intervals or k-mers for read and profile
+  int      *sasgn = NULL;
+  int      *hash = NULL;
+  seg_t   *cprofile = NULL;   // Compressed profile, used in seed selection
+  intvl_t *mintvl = NULL;
+  Wall_Arg *warg;
+  Rel_Arg  *rel_arg;
 #ifdef DO_PMM
-  PMM_Arg       *parg;
+  PMM_Arg  *parg;
 #endif
 
   // Variables for loading sequence/header
-  kseq_t        *fxseq = NULL;           // for FASTX input
-  DAZZ_DB       *db = NULL;
-  DAZZ_READ     *r = NULL;
+  kseq_t     *fxseq = NULL;       // for FASTX input
+  DAZZ_DB    *db = NULL;
+  DAZZ_READ  *r = NULL;
 #ifdef WRITE_TRACK
-  int64          tidx;                   // Index for DAZZ track (afile; .anno file)
-  char          *track, *crack;          // Data for DAZZ track (dfile; .data file)
+  int64       tidx;               // Index for DAZZ track (afile; .anno file)
+  char       *track = NULL;       // Data for DAZZ track (dfile; .data file)
+  char       *crack = NULL;
 #endif
-  char           header[MAX_NAME];       // for both FASTX and DB
-  DAZZ_STUB     *stub;
-  char         **flist = NULL;
-  int           *findx = NULL;
-  int            map;
-  FILE          *hdrs = NULL;
-  char          *hdrs_name = "";
+  char        header[MAX_NAME];   // for both FASTX and DB
+  DAZZ_STUB  *stub;
+  char      **flist = NULL;
+  int        *findx = NULL;
+  int         map;
+  FILE       *hdrs = NULL;
+  char       *hdrs_name = "";
 
   // Input type-specific processing
   if (IS_DB)
@@ -112,8 +119,10 @@ static void *kmer_class_thread(void *arg)
     for (int i = 0; i < Km1; i++)
       rasgn[i] = 'N';
     if (FIND_SEED)
-      { sasgn = Malloc((rlen_max+1)*sizeof(int),"Seed array");
-        hash  = Malloc((rlen_max+1)*sizeof(int),"Hash array");
+      { sasgn    = Malloc((rlen_max+1)*sizeof(int),"Seed array");
+        hash     = Malloc((rlen_max+1)*sizeof(int),"Hash array");
+        cprofile = Malloc((rlen_max+1)*sizeof(seg_t),"Compressed profile array");
+        mintvl   = Malloc((rlen_max+1)*sizeof(intvl_t),"Mask interval array");
       }
 
     rel_arg = alloc_rel_arg(rlen_max);
@@ -279,7 +288,7 @@ static void *kmer_class_thread(void *arg)
 
       // Find seeds for alignment
       if (FIND_SEED)
-        find_seeds(seq,profile,pasgn,plen,K,sasgn,hash,Q);
+        find_seeds(Q,seq,pasgn,profile,cprofile,hash,sasgn,mintvl,plen,K);
 
 #ifdef DEBUG_SINGLE
       continue;
