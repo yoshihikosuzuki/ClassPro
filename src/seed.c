@@ -7,10 +7,10 @@
 
 #undef DEBUG_HASH
 #undef DEBUG_COMPRESS
-#undef DEBUG_QUEUE
+#define DEBUG_QUEUE
 #define DEBUG_SEED
-#undef DEBUG_SEGMENT
-#undef DEBUG_SELECT
+#define DEBUG_SEGMENT
+#define DEBUG_SELECT
 #undef TIME_SEED
 #define INFO_SEED
 
@@ -479,7 +479,7 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
                         const int      K,
                         const char     C)
 { int N, M;
-  hmer_t e, f;
+  hmer_t e, f, g;
 
   N = compress_profile(profile,class,cprofile,plen,C);
 
@@ -502,10 +502,24 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
           e.seg_id = i;
           e.pos = cprofile[i].b;
           e.key = cprofile[i].cnt;
+          if (kdq_size(Q) > 0)
+            { f = kdq_at(Q, 0);
+              if (f.key < e.key)   // all elements are wiped out from Q
+                { for (int j = 0; j < (int)kdq_size(Q); j++)
+                    { g = kdq_at(Q, j);
+                      if (f.key == g.key)
+                        cprofile[g.seg_id].nw = MIN(e.pos - g.pos,WSIZE);
+                      else
+                        break;
+                    }
+                  kdq_size(Q) = 0;
+                }
+            }
           while (kdq_size(Q) > 0)
-            { f = kdq_at(Q, kdq_size(Q) - 1);   // TODO: return pointer instead of object?
+            { f = kdq_at(Q, kdq_size(Q) - 1);
               if (f.key < e.key)
-                kdq_size(Q)--;
+                { kdq_size(Q)--;
+                }
               else
                 break;
             }
@@ -515,6 +529,13 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
       if (kdq_size(Q) == 0) continue;
 
       // Remove out-of-range elements
+      f = kdq_at(Q, 0);
+      if (f.pos <= cprofile[i].b - WSIZE)
+        while (kdq_size(Q) > 0 && kdq_at(Q, 0).key == f.key && kdq_at(Q, 0).pos <= cprofile[i].b - WSIZE)
+          { g = kdq_at(Q, 0);
+            cprofile[g.seg_id].nw = WSIZE;
+            kdq_shift(hmer_t, Q);
+          }
       if (kdq_at(Q, 0).pos <= cprofile[i].b - WSIZE)
         while (kdq_size(Q) > 0 && kdq_at(Q, 0).pos <= cprofile[i].b - WSIZE)
           kdq_shift(hmer_t, Q);
@@ -524,13 +545,13 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
       // Now the leftmost element in the deque is the maximizer in the current window.
       // Increament `nw` so that `seg.nw` := # of windows in which the count is max.
       e = kdq_at(Q, 0);
-      cprofile[e.seg_id].nw++;
+      cprofile[e.seg_id].nw++;   // TODO: ここでは nw 変えない？
 
-      // Increment for each k-mer with tie count   // TODO: Worst case O(L^2). Make it efficient?
+      // Increment for each k-mer with tie count
       for (int j = 1; j < (int)kdq_size(Q); j++)
         { f = kdq_at(Q, j);
           if (e.key != f.key) break;
-          cprofile[f.seg_id].nw++;
+          cprofile[f.seg_id].nw++;   // TODO: ここでは nw 変えない？
         }
 
 #ifdef DEBUG_QUEUE
@@ -543,11 +564,13 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
 #endif
     }   // for (int i = 0; i < plen; i++)
 
+    // TODO: 最後に Q に残っているもので nw 調整？
+
 #ifdef DEBUG_SEGMENT
-//   fprintf(stderr,"# of segments = %d\n",N);
-//   for (int i = 0; i < N; i++)
-//     fprintf(stderr,"seg[%d] (%d, %d) cnt = %d, # = %d\n",i,
-//                    cprofile[i].b,cprofile[i].e,cprofile[i].cnt,cprofile[i].nw);
+  fprintf(stderr,"# of segments = %d\n",N);
+  for (int i = 0; i < N; i++)
+    fprintf(stderr,"seg[%d] (%d, %d) cnt = %d, # = %d\n",i,
+                   cprofile[i].b,cprofile[i].e,cprofile[i].cnt,cprofile[i].nw);
 #endif
 
 #ifdef TIME_SEED

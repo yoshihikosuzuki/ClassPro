@@ -20,7 +20,7 @@ const int NREAD_PWRITE = 100;   // Number of reads per write in parallel-write m
 
 /* --- Debug modes --- */
 // Single-read mode. No files are output
-#undef DEBUG_SINGLE
+#define DEBUG_SINGLE
 const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
 // Never output DAZZ track in single-read mode
 #ifndef DEBUG_SINGLE
