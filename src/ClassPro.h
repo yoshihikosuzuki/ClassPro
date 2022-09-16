@@ -20,7 +20,7 @@ const int NREAD_PWRITE = 100;   // Number of reads per write in parallel-write m
 
 /* --- Debug modes --- */
 // Single-read mode. No files are output
-#define DEBUG_SINGLE
+#undef DEBUG_SINGLE
 const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
 // Never output DAZZ track in single-read mode
 #ifndef DEBUG_SINGLE
@@ -30,7 +30,7 @@ const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
 /* --- Debug flags --- */
 // Several assertions used for sanity check
 #define DEBUG
-#define DEBUG_ITER
+#undef DEBUG_ITER
 #undef DEBUG_BINOM
 #undef DEBUG_EMODEL
 #undef DEBUG_CTX
@@ -249,8 +249,9 @@ typedef struct {
 
 typedef struct {
   int seg_id;   // index of a segment
-  int pos;      // begin position of the segment
-  int key;      // (tie) count
+  int b;        // begin position of the segment
+  int e;        // end position, used for `last_oor_pos`
+  int cnt;      // (tie) count
 } hmer_t;
 
 typedef struct {
