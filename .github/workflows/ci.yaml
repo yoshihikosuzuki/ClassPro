@@ -39,15 +39,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Compile
-        run:  make
+        run: make
       - name: Tarball
-        run: tar zcvf release.tar.gz *
+        run: |
+          mkdir -p classpro-${{ github.ref_name }}
+          mv bin scripts classpro-${{ github.ref_name }}
+          tar zcvf classpro-${{ github.ref_name }}.tar.gz classpro-${{ github.ref_name }}/
       - name: Add
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: release.tar.gz
+          asset_path: classpro-${{ github.ref_name }}.tar.gz
           asset_name: classpro-${{ github.ref_name }}_${{ matrix.os_name }}.tar.gz
           asset_content_type: application/gzip

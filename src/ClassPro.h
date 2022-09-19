@@ -21,7 +21,7 @@ const int NREAD_PWRITE = 100;   // Number of reads per write in parallel-write m
 /* --- Debug modes --- */
 // Single-read mode. No files are output
 #undef DEBUG_SINGLE
-const int DEBUG_SINGLE_ID = 522;   // Read ID in single-read mode
+const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
 // Never output DAZZ track in single-read mode
 #ifndef DEBUG_SINGLE
 #define WRITE_TRACK
@@ -240,14 +240,38 @@ void classify_unrel(Intvl *intvl, int N);
  ********************************************************************************************/
 
 typedef struct {
-  int pos;
-  int key;
+  int b;     // [b..e) has tie counts of a specific class, or does not belong to the class
+  int e;
+  int cnt;   // Tie count of this segment if valid, otherwise -1
+  int nw;    // Number of segment windows in which this segment is MM
+  bool is_seed;
+} seg_t;
+
+typedef struct {
+  int seg_id;   // index of a segment
+  int b;        // begin position of the segment
+  int e;        // end position, used for `last_oor_pos`
+  int cnt;      // (tie) count
 } hmer_t;
+
+typedef struct {
+  int b;
+  int e;
+} intvl_t;
 
 #include "kdq.h"
 KDQ_INIT(hmer_t);
 
-void find_seeds(const char *seq, const uint16 *profile, const char *class, const int plen, const int K, int *sasgn, int *hash, kdq_t(hmer_t) *Q);
+void find_seeds(kdq_t(hmer_t) *Q,
+                const char    *_seq,
+                const char    *class,
+                const uint16  *profile,
+                seg_t         *cprofile,
+                int           *hash,
+                int           *sasgn,
+                intvl_t       *mintvl,
+                const int      plen,
+                const int      K);
 
 /*******************************************************************************************
  *
@@ -262,7 +286,7 @@ typedef struct
     int            beg;      // Reads in [beg,end) are classified in this thread
     int            end;
     // Below are for IO
-    gzFile         fxfp;     // FASTX file pointer    // TODO: change to void *Seq_Info
+    gzFile         fxfp;     // FASTX file pointer
     kseq_t        *fxseq;    // To fetch reads from FASTX
     DAZZ_DB       *db;       // To fetch nucleotide sequences from .db/.dam
     DAZZ_STUB     *stub;     // To fetch read names from .db
