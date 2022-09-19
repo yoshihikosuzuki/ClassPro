@@ -6,7 +6,7 @@ class2cns
 
 gsl/
 gsl-2.7/
-*/Makefile
+# */Makefile
 
 test/
 !test/*.sh
