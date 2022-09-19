@@ -7,7 +7,7 @@ on:
 
 jobs:
   create_release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -29,9 +29,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-18.04, macos-latest]
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-18.04
             os_name: linux
           - os: macos-latest
             os_name: macos
