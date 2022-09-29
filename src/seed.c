@@ -179,14 +179,12 @@ static inline int add_intvl(intvl_t *mintvl, int M, int b, int e)
 */
 static void _find_seeds(kdq_t(hmer_t) *Q,
                         const uint16  *profile,
-                        const char    *seq,
                         const char    *class,
                         const int     *hash,
                         int           *sasgn,
                         seg_t         *cprofile,
                         intvl_t       *mintvl,
                         const int      plen,
-                        const int      K,
                         const char     C)
 { int N, M;
   hmer_t now, first, elem;
@@ -436,8 +434,8 @@ void find_seeds(kdq_t(hmer_t) *Q,
 #endif
 
   // Find seeds from first H-mers and then D-mers
-  _find_seeds(Q,profile,seq,class,hash,sasgn,cprofile,mintvl,plen,K,'H');
-  _find_seeds(Q,profile,seq,class,hash,sasgn,cprofile,mintvl,plen,K,'D');   // TODO: density adjustment based on the H-MMs
+  _find_seeds(Q,profile,class,hash,sasgn,cprofile,mintvl,plen,'H');
+  _find_seeds(Q,profile,class,hash,sasgn,cprofile,mintvl,plen,'D');   // TODO: density adjustment based on the H-MMs
 
   // change flag value into seed info
   for (int i = 0; i < plen; i++)

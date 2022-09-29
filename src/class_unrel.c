@@ -189,7 +189,11 @@ static inline double calc_logp_u(enum State s, int idx, Intvl *intvl, int N)
   else return logp_r_u(idx,intvl,N);
 }
 
-static void update_state(int idx, int d, Intvl *intvl, int N)
+static void update_state(int idx, Intvl *intvl, int N
+#ifdef DEBUG_UNREL
+                         , int d
+#endif
+                         )
 { Intvl I = intvl[idx];
 
   if (MAX(I.cb,I.ce) >= GLOBAL_COV[REPEAT])
@@ -255,11 +259,19 @@ void classify_unrel(Intvl *intvl, int N)
 
   for (int i = N-1; i >= 0; i--)
     if (!is_fixed[iord[i].idx])
-      update_state(iord[i].idx,0,intvl,N);
+      update_state(iord[i].idx,intvl,N
+#ifdef DEBUG_UNREL
+                   ,0
+#endif
+                   );
 
   for (int i = 0; i < N; i++)
     if (!is_fixed[iord[i].idx])
-      update_state(iord[i].idx,1,intvl,N);
+      update_state(iord[i].idx,intvl,N
+#ifdef DEBUG_UNREL
+                   ,1
+#endif
+                   );
 
 #ifdef DEBUG_UNREL
   fprintf(stderr,"         ");
