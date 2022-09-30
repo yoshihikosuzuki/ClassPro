@@ -16,18 +16,12 @@
 // offset for the complement base in the random seeds table
 const uint8_t cpOff = 0x07;
 
-// shift for gerenerating multiple hash values
-const int multiShift = 27;
-
-// seed for gerenerating multiple hash values
-static const uint64_t multiSeed = 0x90b45d39fb6da1fa;
-
 // 64-bit random seeds corresponding to bases and their complements
-static const uint64_t seedA = 0x3c8bfbb395c60474;
-static const uint64_t seedC = 0x3193c18562a02b4c;
-static const uint64_t seedG = 0x20323ed082572324;
-static const uint64_t seedT = 0x295549f54be24456;
-static const uint64_t seedN = 0x0000000000000000;
+#define seedA 0x3c8bfbb395c60474
+#define seedC 0x3193c18562a02b4c
+#define seedG 0x20323ed082572324
+#define seedT 0x295549f54be24456
+#define seedN 0x0000000000000000
 
 static const uint64_t seedTab[256] = {
     seedN, seedT, seedN, seedG, seedA, seedA, seedN, seedC, // 0..7
