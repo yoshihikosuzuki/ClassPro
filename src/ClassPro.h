@@ -9,7 +9,7 @@
 
 /* --- Debug modes --- */
 // `DEBUG_SINGLE`: Single-read mode. No files are output
-#define DEBUG_SINGLE
+#undef DEBUG_SINGLE
 const int DEBUG_SINGLE_ID = 11;   // Read ID in single-read mode
 
 /* --- Debug flags --- */

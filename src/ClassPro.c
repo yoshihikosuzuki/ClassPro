@@ -591,11 +591,7 @@ int main(int argc, char *argv[])
 #else
     const int b = CLASS+1;   // Skip .class file because already merged
 #endif
-#ifdef WRITE_TRACK
     const int e = (arg->is_db) ? N_OTYPE : CLASS+1;
-#else
-    const int e = CLASS+1;
-#endif
 
     if (VERBOSE && b < e)
       fprintf(stderr,"\nMerging files...\n");

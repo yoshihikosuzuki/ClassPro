@@ -136,7 +136,7 @@ static Error_Model *load_emodel(const char *name)
 
   if (name == NULL)
     { if (VERBOSE)
-        fprintf(stderr,"Error model not specified. Use the default error model.\n");
+        fprintf(stderr,"Error model not specified. Using the default error model.\n");
       for (int t = HP; t <= TS; t++)
         for (int l = 1; l <= emodel[t].lmax; l++)
           emodel[t].pe[l] = 0.002 * l * l + 0.002;

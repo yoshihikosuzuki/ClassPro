@@ -96,14 +96,14 @@ int main(int argc, char *argv[])
   { int size = 0;
     int64 idx = 0;
     
-    ranno = Fopen(Catenate(".",fk_root,"",".rep.anno"),"w");
-    rdata = Fopen(Catenate(".",fk_root,"",".rep.data"),"w");
-    if (ranno == NULL || rdata == NULL)
-      exit(1);
-    fwrite(&(db->nreads),sizeof(int),1,ranno);
-    fwrite(&size,sizeof(int),1,ranno);
-    fwrite(&idx,sizeof(int64),1,ranno);
-    ridx = 0;
+    // ranno = Fopen(Catenate(".",fk_root,"",".rep.anno"),"w");
+    // rdata = Fopen(Catenate(".",fk_root,"",".rep.data"),"w");
+    // if (ranno == NULL || rdata == NULL)
+    //   exit(1);
+    // fwrite(&(db->nreads),sizeof(int),1,ranno);
+    // fwrite(&size,sizeof(int),1,ranno);
+    // fwrite(&idx,sizeof(int64),1,ranno);
+    // ridx = 0;
 
     sanno = Fopen(Catenate(".",fk_root,"",".seed.anno"),"w");
     sdata = Fopen(Catenate(".",fk_root,"",".seed.data"),"w");
@@ -165,8 +165,8 @@ int main(int argc, char *argv[])
               if (in_R)
                 { if (ks->qual.s[i] != 'R')
                     { e = i;
-                      fwrite(&b,sizeof(int),1,rdata);
-                      fwrite(&e,sizeof(int),1,rdata);
+                      // fwrite(&b,sizeof(int),1,rdata);
+                      // fwrite(&e,sizeof(int),1,rdata);
                       nrep++;
                       in_R = false;
                     }
@@ -174,12 +174,12 @@ int main(int argc, char *argv[])
             }
           if (in_R)
             { e = rlen;
-              fwrite(&b,sizeof(int),1,rdata);
-              fwrite(&e,sizeof(int),1,rdata);
+              // fwrite(&b,sizeof(int),1,rdata);
+              // fwrite(&e,sizeof(int),1,rdata);
               nrep++;
             }
           ridx += (nrep*2*sizeof(int));
-          fwrite(&ridx,sizeof(int64),1,ranno);
+          // fwrite(&ridx,sizeof(int64),1,ranno);
         }
         if (verbose)
           { fprintf(stderr,"CLASS = ");
@@ -202,8 +202,15 @@ int main(int argc, char *argv[])
         int nseed = 0;
         for (p = o; s[p] != 4; p++)   // TODO: loop without DB? (length must be rlen)
           { if (c[p] > 0)
-              { int b = MAX(p-o-WSIZE,0);
-                int e = MIN(p-o+WSIZE,rlen);
+              { // int b = MAX(p-o-WSIZE,0);
+                // int e = MIN(p-o+WSIZE,rlen);
+                int b = p-o-P->kmer+1;
+                if (b < 0)
+                  { fprintf(stderr,"[ERROR] position < Km1\n");
+                    exit(1);
+                  }
+                int e = p-o;
+                // fprintf(stderr,"b=%d, e=%d, rlen=%d\n",b,e,rlen);
                 fwrite(&b,sizeof(int),1,sdata);
                 fwrite(&e,sizeof(int),1,sdata);
                 nseed++;
@@ -226,8 +233,10 @@ int main(int argc, char *argv[])
   }
 
   fclose(kdata);
-  fclose(ranno);
-  fclose(rdata);
+  // fclose(ranno);
+  // fclose(rdata);
+  fclose(sanno);
+  fclose(sdata);
 
   return 0;
 }
