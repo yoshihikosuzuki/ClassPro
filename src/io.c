@@ -46,15 +46,7 @@ void *merge_anno(void *arg)
         }
 
       while (fread(&idx,sizeof(int64),1,g) == 1)
-        { 
-// #ifdef DEBUG
-//           if (idx == 0)
-//             { fprintf(stderr,"First index must not be 0 except the first .anno file\n");
-//               exit(1);
-//             }
-// #endif
-
-          idx += offset;
+        { idx += offset;
           fwrite(&idx,sizeof(int64),1,f);
         }
       offset = idx;

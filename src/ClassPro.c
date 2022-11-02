@@ -598,21 +598,13 @@ int main(int argc, char *argv[])
 
     for (i = 0; i+1 < arg->nthreads && b+i < e-1; i++)
       { if (O_INFO[b+i].is_anno)
-          { // if (O_INFO[b+i].is_mask)
-            //   pthread_create(threads+i+1,NULL,merge_anno_mask,paramm+b+i);
-            // else
-              pthread_create(threads+i+1,NULL,merge_anno,paramm+b+i);
-          }
+          pthread_create(threads+i+1,NULL,merge_anno,paramm+b+i);
         else
           pthread_create(threads+i+1,NULL,merge_files,paramm+b+i);
       }
     for (; b+i < e; i++)
       { if (O_INFO[b+i].is_anno)
-          { // if (O_INFO[b+i].is_mask)
-            //   merge_anno_mask(paramm+b+i);
-            // else
-              merge_anno(paramm+b+i);
-          }
+          merge_anno(paramm+b+i);
         else
           merge_files(paramm+b+i);
       }

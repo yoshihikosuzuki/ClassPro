@@ -497,7 +497,6 @@ static void anno_repeat(int *sasgn,
 #endif
     }
   *ridx += (n_rintvl*2*sizeof(int));
-  // printf("ridx = %lld\n",*ridx);
   fwrite(ridx,sizeof(int64),1,ranno);
 
 #ifdef DEBUG_REP
