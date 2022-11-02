@@ -17,7 +17,7 @@ const char    *Usage            = "[-vs] [-T<int(4)>] "
                                   "<source>[.db|.dam|.f[ast][aq][.gz]";
 
 const char     stoc[N_STATE]    = { 'E', 'R', 'H', 'D' };
-#ifdef WRITE_TRACK
+
 const char     ctos[128]        = { 0, 0, 0, 0, 0, 0, 0, 0,
                                     0, 0, 0, 0, 0, 0, 0, 0,
                                     0, 0, 0, 0, 0, 0, 0, 0,
@@ -34,18 +34,6 @@ const char     ctos[128]        = { 0, 0, 0, 0, 0, 0, 0, 0,
                                     0, 0, 0, 0, 0, 0, 0, 0,
                                     0, 0, 0, 0, 0, 0, 0, 0,
                                     0, 0, 0, 0, 0, 0, 0, 0  };
-#endif
-
-#define        N_EXT              10
-const char    *EXT[N_EXT]       = { ".db",       ".dam",
-                                    ".fastq",    ".fasta",
-                                    ".fq",       ".fa",
-                                    ".fastq.gz", ".fasta.gz",
-                                    ".fq.gz",    ".fa.gz"     };
-
-const Out_Info O_INFO[N_OTYPE]  = { { "/",  ".class",      false, false },
-                                    { "/.", ".class.data", false, true  },
-                                    { "/.", ".class.anno", true,  true  }  };
 
 #define        MAX_KMER_CNT       32767
 

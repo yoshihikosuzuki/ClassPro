@@ -18,6 +18,8 @@ a.out
 seed_naive.c
 nthash.v2.2.0.h
 
+.nfs*
+
 # Prerequisites
 *.d
 

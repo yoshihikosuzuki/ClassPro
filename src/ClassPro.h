@@ -7,28 +7,13 @@
  *
  ********************************************************************************************/
 
-/* --- Developmental or experimental modes --- */
-// Create a distinct profile instance per thread
-#undef DUP_PROFILE
-// Experimental mode of parallel write to .class (currently only for Linux & DAZZ_DB inputs)
-#undef PARALLEL_WRITE
-const int NREAD_PWRITE = 100;   // Number of reads per write in parallel-write mode
-// Output DAZZ track of classifications as well for DAZZ_DB inputs
-#undef WRITE_TRACK
-// Per-read H/D-cov estimation
-#undef DO_PMM
-
 /* --- Debug modes --- */
-// Single-read mode. No files are output
-#undef DEBUG_SINGLE
-const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
-// Never output DAZZ track in single-read mode
-#ifndef DEBUG_SINGLE
-#define WRITE_TRACK
-#endif
+// `DEBUG_SINGLE`: Single-read mode. No files are output
+#define DEBUG_SINGLE
+const int DEBUG_SINGLE_ID = 11;   // Read ID in single-read mode
 
 /* --- Debug flags --- */
-// Several assertions used for sanity check
+// `DEBUG`: Several assertions used for sanity check
 #define DEBUG
 #undef DEBUG_ITER
 #undef DEBUG_BINOM
@@ -42,6 +27,13 @@ const int DEBUG_SINGLE_ID = 1;   // Read ID in single-read mode
 #undef DEBUG_REL
 #undef DEBUG_UNREL
 #undef DEBUG_SLIP
+
+/* --- Developmental or experimental modes --- */
+// [DEPRECATED] Experimental mode of parallel write to .class (currently only for Linux & DAZZ_DB inputs)
+#undef PARALLEL_WRITE
+const int NREAD_PWRITE = 100;   // Number of reads per write in parallel-write mode
+// Per-read H/D-cov estimation
+#undef DO_PMM
 
 /*******************************************************************************************
  *
@@ -239,6 +231,7 @@ void classify_unrel(Intvl *intvl, int N);
  *
  ********************************************************************************************/
 
+// Compressed profile segment
 typedef struct {
   int b;     // [b..e) has tie counts of a specific class, or does not belong to the class
   int e;
@@ -247,6 +240,7 @@ typedef struct {
   bool is_seed;
 } seg_t;
 
+// Segment for deque
 typedef struct {
   int seg_id;   // index of a segment
   int b;        // begin position of the segment
@@ -254,13 +248,14 @@ typedef struct {
   int cnt;      // (tie) count
 } hmer_t;
 
+#include "kdq.h"
+KDQ_INIT(hmer_t);
+
+// Simple interval for masked region on a profile
 typedef struct {
   int b;
   int e;
 } intvl_t;
-
-#include "kdq.h"
-KDQ_INIT(hmer_t);
 
 void find_seeds(kdq_t(hmer_t) *Q,
                 const char    *_seq,
@@ -271,52 +266,16 @@ void find_seeds(kdq_t(hmer_t) *Q,
                 int           *sasgn,
                 intvl_t       *mintvl,
                 const int      plen,
-                const int      K);
+                const int      K,
+                FILE          *ranno,
+                FILE          *rdata,
+                int64         *ridx);
 
 /*******************************************************************************************
  *
  *  Main routine for classification (ClassPro.c)
  *
  ********************************************************************************************/
-
-// Arguments for classification (defined for each thread)
-typedef struct
-  { Profile_Index *P;        // To fetch count profiles
-    Error_Model   *emodel;   // Error models for low-complexity bases
-    int            beg;      // Reads in [beg,end) are classified in this thread
-    int            end;
-    // Below are for IO
-    gzFile         fxfp;     // FASTX file pointer
-    kseq_t        *fxseq;    // To fetch reads from FASTX
-    DAZZ_DB       *db;       // To fetch nucleotide sequences from .db/.dam
-    DAZZ_STUB     *stub;     // To fetch read names from .db
-    FILE          *hdrs;     // To fetch read names from .dam
-    FILE          *cfile;    // *.class (fastq-like ascii flie)
-    FILE          *dfile;    // .*.class.data (DAZZ_DB track; only when input is .db/.dam)
-    FILE          *afile;    // .*.class.anno (DAZZ_DB track; only when input is .db/.dam)
-  } Class_Arg;
-
-/*******************************************************************************************
- *
- *  IO (io.c)
- *
- ********************************************************************************************/
-
-// Supported extension names for input sequence files
-extern const int   N_EXT;
-extern const char *EXT[];
-
-// Output file types and their attributes
-enum Otype { CLASS, DATA, ANNO, N_OTYPE };
-
-typedef struct
-  { char *sep;
-    char *suf;
-    bool  is_anno;
-    bool  is_bin;
-  } Out_Info;
-
-extern const Out_Info O_INFO[N_OTYPE];
 
 // Command-line arguments + alpha
 typedef struct
@@ -336,6 +295,55 @@ typedef struct
     bool   is_dam;       // .dam?
     bool   find_seeds;   // `-s` option
   } Arg;
+
+// Arguments for classification (defined for each thread)
+typedef struct
+  { Profile_Index *P;        // To fetch count profiles
+    Error_Model   *emodel;   // Error models for low-complexity bases
+    int            beg;      // Reads in [beg,end) are classified in this thread
+    int            end;
+    // Below are for IO
+    gzFile         fxfp;     // FASTX file pointer
+    kseq_t        *fxseq;    // To fetch reads from FASTX
+    DAZZ_DB       *db;       // To fetch nucleotide sequences from .db/.dam
+    DAZZ_STUB     *stub;     // To fetch read names from .db
+    FILE          *hdrs;     // To fetch read names from .dam
+    FILE          *cfile;    // *.class (fastq-like ascii flie)
+    FILE          *dfile;    // .*.class.data (DAZZ_DB track; only when input is .db/.dam)
+    FILE          *afile;    // .*.class.anno (DAZZ_DB track; only when input is .db/.dam)
+    FILE          *rdata;    // .*.rep.data (DAZZ_DB mask track)
+    FILE          *ranno;    // .*.rep.anno
+  } Class_Arg;
+
+/*******************************************************************************************
+ *
+ *  IO (io.c)
+ *
+ ********************************************************************************************/
+
+// Supported extension names for input sequence files
+#define        N_EXT              10
+const char    *EXT[N_EXT]       = { ".db",       ".dam",
+                                    ".fastq",    ".fasta",
+                                    ".fq",       ".fa",
+                                    ".fastq.gz", ".fasta.gz",
+                                    ".fq.gz",    ".fa.gz"     };
+
+// Output file types and their attributes
+enum Otype { CLASS, DATA, ANNO, RDATA, RANNO, N_OTYPE };
+
+typedef struct
+  { char *sep;
+    char *suf;
+    bool  is_anno;
+    bool  is_bin;
+  } Out_Info;
+
+const Out_Info O_INFO[N_OTYPE]  = { { "/",  ".class",      false, false },
+                                    { "/.", ".class.data", false, true  },
+                                    { "/.", ".class.anno", true,  true  },
+                                    { "/.", ".rep.data",   false, true  },
+                                    { "/.", ".rep.anno",   true,  true  }  };
 
 // Arguments for merging intermediate output files (defined for each `Otype`)
 typedef struct

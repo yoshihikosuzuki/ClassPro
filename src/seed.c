@@ -5,14 +5,15 @@
 #include "nthash.h"
 #include "ClassPro.h"
 
+#undef DEBUG_REP
+#define DEBUG_COMPRESS_REP
 #undef DEBUG_HASH
 #undef DEBUG_COMPRESS
 #undef DEBUG_QUEUE
-#undef DEBUG_SEED
+#define DEBUG_SEED
 #undef DEBUG_SEGMENT
 #undef DEBUG_SELECT
 #undef TIME_SEED
-#undef INFO_SEED
 
 #define WSIZE 1000
 #define MOD 10009
@@ -46,18 +47,23 @@ static void kmer_hash(const char *seq,
   return;
 }
 
+/* Compress consecutive tie counts in `profile` into a single segment.
+   Treat only k-mers with class `C`.
+   Do not treat k-mers at position i where sasgn[i] == -10 (i.e. highly repetitive region)
+*/
 static int compress_profile(const uint16 *profile,
                             const char   *class,
+                            const int    *sasgn,
                             seg_t        *cprofile,
                             const int     plen,
                             const char    C)
 { int N = 0;
   int b = 0, e = 1;
-  bool prev_valid = (class[0] == C) ? true : false;
+  bool prev_valid = (class[0] == C && sasgn[0] != -10) ? true : false;
 
   while (e < plen)
     { if (!prev_valid)
-        { while (e < plen && class[e] != C)
+        { while (e < plen && (class[e] != C || sasgn[e] == -10))
             e++;
           cprofile[N].b = b;
           cprofile[N].e = e;
@@ -80,7 +86,7 @@ static int compress_profile(const uint16 *profile,
           N++;
           b = e;
           e++;
-          prev_valid = (class[b] == C) ? true : false;
+          prev_valid = (class[b] == C && sasgn[b] != -10) ? true : false;
         }
     }
 
@@ -170,13 +176,6 @@ static inline int add_intvl(intvl_t *mintvl, int M, int b, int e)
   return M;
 }
 
-/* Meaning of the value of `sasgn` (for each position (= k-mer)):   // TODO: change to bit operation with macros?
-     -10 = not candidate
-      -2 = seed fixed elsewhere
-      -1 = fixed seed
-       0 = candidate
-       1 = seed
-*/
 static void _find_seeds(kdq_t(hmer_t) *Q,
                         const uint16  *profile,
                         const char    *class,
@@ -190,7 +189,7 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
   hmer_t now, first, elem;
   seg_t seg;
 
-  N = compress_profile(profile,class,cprofile,plen,C);
+  N = compress_profile(profile,class,sasgn,cprofile,plen,C);
 
 #ifdef DEBUG_SEED
   if (kdq_size(Q) != 0)
@@ -295,6 +294,7 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
     }
 
 #ifdef DEBUG_SEGMENT
+  // Show all segments with # of MM windows information
   fprintf(stderr,"# of segments = %d\n",N);
   for (int i = 0; i < N; i++)
     { seg = cprofile[i];
@@ -381,8 +381,9 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
         fprintf(stderr,"Seed seg[%d] = [(%d, %d) cnt = %d, nw = %d]\n",
                        i,seg.b,seg.e,seg.cnt,seg.nw);
     }
-  if (!(mintvl[0].b == 0 && mintvl[0].e == plen))
-    { fprintf(stderr,"Invalid segments | (Seed segments +- WSIZE) do not cover the read\n");
+
+  if (!(mintvl[0].b == 0 && mintvl[0].e == plen))   // Should never enter here
+    { fprintf(stderr,"[ERROR] Invalid segments | (Seed segments +- WSIZE) do not cover the read\n");
       exit(1);
     }
 #endif
@@ -399,9 +400,215 @@ seed_exit:
   return;
 }
 
+/* Find repeat intervals on a profile.
+   For each X bp sliding window W, W is repetitive iff more than X * p % k-mers are R-mers.
+   A repeat interval is a union of consective repetitive windows.
+*/
+static void anno_repeat(int *sasgn,
+                        const char *class,
+                        const int plen,
+                        const int window_size,
+                        const double p_rmer_thres,
+                        const int K,
+                        FILE *ranno,
+                        FILE *rdata,
+                        int64 *ridx)
+{ const int n_rmer_thres = window_size * p_rmer_thres;
+  const int Km1 = K-1;
+  
+  int n_rmer = 0;
+  for (int i = 0; i < window_size; i++)
+    if (class[i] == 'R' || class[i] == 'E') n_rmer++;
+  bool in_R = (n_rmer >= n_rmer_thres) ? true : false;
+
+#ifdef DEBUG_REP
+      fprintf(stderr,"i = %5d, # E/R-mers in W[%d..%d) = %d   %s\n",
+                     0,n_rmer,0,window_size,(in_R)?"*":"");
+#endif
+  
+  // NOTE: Do not forget to add Km1 when output `b,e` to DAZZ_TRACK.
+  int b = 0, e;
+  for (int i = 1; i < plen-window_size+1; i++)
+    { if (class[i-1] == 'R' || class[i-1] == 'E') n_rmer--;
+      if (class[i+window_size-1] == 'R' || class[i+window_size-1] == 'E') n_rmer++;
+
+#ifdef DEBUG_REP
+      fprintf(stderr,"i = %5d, class[i-1]=%c, class[i+W-1]=%c, # E/R-mers in W[%d..%d) = %d   %s\n",
+                     i,class[i-1],class[i+window_size-1],i,i+window_size,n_rmer,(in_R)?"*":"");
+#endif
+
+      if (!in_R)
+        { if (n_rmer >= n_rmer_thres)   // TODO: trim H/D-mers at both sides?
+            { b = i;
+              in_R = true;
+            }
+        }
+      if (in_R)
+        { if (n_rmer < n_rmer_thres)
+            { e = i+window_size-1;
+              for (int j = b; j < e; j++)
+                sasgn[j] = -10;
+              in_R = false;
+#ifdef DEBUG_REP
+  fprintf(stderr,"R-intval: [%d .. %d]\n",b,e);
+#endif
+            }
+        }
+    }
+  if (in_R)
+    { e = plen;
+      for (int j = b; j < e; j++)
+        sasgn[j] = -10;
+#ifdef DEBUG_REP
+  fprintf(stderr,"R-intval: [%d .. %d]\n",b,e);
+#endif
+    }
+  // Up to here `b` and `e` are defined on [0..plen)
+
+#ifndef DEBUG_SINGLE
+  // Write to DAZZ_TRACK
+  int n_rintvl = 0;
+  in_R = (sasgn[0] == -10) ? true : false;
+  for (int i = 1; i < plen; i++)
+    { if (!in_R)
+        { if (sasgn[i] == -10)
+            { b = i+Km1;
+              in_R = true;
+            }
+        }
+      if (in_R)
+        { if (sasgn[i] != -10)
+            { e = i+Km1;
+              fwrite(&b,sizeof(int),1,rdata);
+              fwrite(&e,sizeof(int),1,rdata);
+              n_rintvl++;
+              in_R = false;
+            }
+        }
+    }
+  if (in_R)
+    { e = plen+Km1;
+      fwrite(&b,sizeof(int),1,rdata);
+      fwrite(&e,sizeof(int),1,rdata);
+      n_rintvl++;
+    }
+  ridx += (n_rintvl*2*sizeof(int));
+  fwrite(&ridx,sizeof(int64),1,ranno);
+
+#ifdef DEBUG_REP
+  fprintf(stderr,"# of R-intvals = %d\n",n_rintvl);
+#endif
+#endif
+
+  return;
+}
+
+
+/* Compress consecutive tie counts in `profile` into a single segment.
+   Treat only non-Error k-mers.
+   Treat only k-mers at position i where sasgn[i] == -10 (i.e. highly repetitive region)
+*/
+static int compress_profile_rep(const uint16 *profile,
+                                const char   *class,
+                                const int    *sasgn,
+                                seg_t        *cprofile,
+                                const int     plen)
+{ int N = 0;
+  int b = 0, e = 1;
+  bool prev_valid = (sasgn[0] == -10 && class[0] != 'E') ? true : false;
+
+#ifdef DEBUG_COMPRESS_REP
+  fprintf(stderr,"@ %5d: sasgn = %3d, class = %c\n",0,sasgn[0],class[0]);
+#endif
+
+  while (e < plen)
+    { 
+#ifdef DEBUG_COMPRESS_REP
+      fprintf(stderr,"@ %5d: sasgn = %3d, class = %c\n",e,sasgn[e],class[e]);
+#endif
+      if (!prev_valid)
+        { while (e < plen && (sasgn[e] != -10 || class[e] == 'E'))
+            e++;
+#ifdef DEBUG_COMPRESS_REP
+          fprintf(stderr,"Invalid segment: [%d..%d)\n",b,e);
+#endif
+          cprofile[N].b = b;
+          cprofile[N].e = e;
+          cprofile[N].cnt = -1;
+          cprofile[N].nw = -10;
+          cprofile[N].is_seed = false;
+          N++;
+          b = e;
+          e++;
+          prev_valid = true;
+        }
+      else
+        { while (e < plen && profile[e] == profile[e-1])
+            e++;
+#ifdef DEBUG_COMPRESS_REP
+          fprintf(stderr,"Valid segment: [%d..%d) cnt = %5d\n",b,e,profile[e-1]);
+#endif
+          cprofile[N].b = b;
+          cprofile[N].e = e;
+          cprofile[N].cnt = profile[e-1];
+          cprofile[N].nw = 0;
+          cprofile[N].is_seed = false;
+          N++;
+          b = e;
+          e++;
+          prev_valid = (sasgn[0] == -10 && class[0] != 'E') ? true : false;
+        }
+    }
+
+#ifdef DEBUG_COMPRESS_REP
+  fprintf(stderr,"# of segments = %d\n",N);
+  for (int i = 0; i < N; i++)
+    fprintf(stderr,"%d: (%d, %d) cnt = %d\n",i,cprofile[i].b,cprofile[i].e,cprofile[i].cnt);
+#endif
+
+  return N;
+}
+
+static void _find_seeds_rep(kdq_t(hmer_t) *Q,
+                            const uint16  *profile,
+                            const char    *class,
+                            const int     *hash,
+                            int           *sasgn,
+                            seg_t         *cprofile,
+                            intvl_t       *mintvl,
+                            const int      plen)
+{ int N, M;
+  hmer_t now, first, elem;
+  seg_t seg;
+
+  N = compress_profile_rep(profile,class,sasgn,cprofile,plen);
+
+#ifdef DEBUG_SEED
+  if (kdq_size(Q) != 0)
+    { fprintf(stderr,"deque not empty!\n");
+      exit(1);
+    }
+#endif
+
+#ifdef TIME_SEED
+  fprintf(stderr,"cm compress\n");
+  timeTo(stderr,false);
+#endif
+
+  return;
+}
+
 /* NOTE: len(profile) == len(class) == plen
          len(_seq) == plen + K - 1
+
    NOTE: class[i] in {'E', 'H', 'D', 'R'}
+
+   NOTE: Meaning of the value of `sasgn` (for each position (= k-mer)):   // TODO: change to bit operation with macros?
+     -10 = not candidate
+      -2 = seed fixed elsewhere
+      -1 = fixed seed
+       0 = candidate
+       1 = seed
 */
 void find_seeds(kdq_t(hmer_t) *Q,
                 const char    *_seq,
@@ -412,9 +619,12 @@ void find_seeds(kdq_t(hmer_t) *Q,
                 int           *sasgn,
                 intvl_t       *mintvl,
                 const int      plen,
-                const int      K)
+                const int      K,
+                FILE          *ranno,
+                FILE          *rdata,
+                int64         *ridx)
 {
-#if defined(DEBUG_SEED) || defined(DEBUG_QUEUE) || defined(INFO_SEED)
+#if defined(DEBUG_SEED) || defined(DEBUG_QUEUE)
   fprintf(stderr,"\n");
 #endif
 
@@ -425,6 +635,12 @@ void find_seeds(kdq_t(hmer_t) *Q,
   timeTo(stderr,false);
 #endif
 
+  for (int i = 0; i < plen; i++)
+    sasgn[i] = 0;
+
+  // Annotate highly repetitive regions
+  anno_repeat(sasgn,class,plen,WSIZE,0.8,K,ranno,rdata,ridx);
+
   // Compute canonical hash for every k-mer
   kmer_hash(seq,hash,plen,K);
 
@@ -433,9 +649,13 @@ void find_seeds(kdq_t(hmer_t) *Q,
   timeTo(stderr,false);
 #endif
 
-  // Find seeds from first H-mers and then D-mers
+  // Find seeds using count maximizers and then sequence minimizers,
+  // from H-mers and D-mers NOT in highly repetitive regions
   _find_seeds(Q,profile,class,hash,sasgn,cprofile,mintvl,plen,'H');
-  _find_seeds(Q,profile,class,hash,sasgn,cprofile,mintvl,plen,'D');   // TODO: density adjustment based on the H-MMs
+  _find_seeds(Q,profile,class,hash,sasgn,cprofile,mintvl,plen,'D');
+
+  // Find seeds among non-Error, low-copy k-mers from highly repetitive regions
+  _find_seeds_rep(Q,profile,class,hash,sasgn,cprofile,mintvl,plen);
 
   // change flag value into seed info
   for (int i = 0; i < plen; i++)

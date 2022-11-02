@@ -183,11 +183,17 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
       paramc[t].beg = t*arg->nparts;
       paramc[t].end = MIN((t+1)*arg->nparts,arg->nreads);
 
-#if !defined(DEBUG_SINGLE) && defined(WRITE_TRACK)
+#ifndef DEBUG_SINGLE
       paramc[t].afile = Fopen(paramm[ANNO].onames[t],"wb");
       paramc[t].dfile = Fopen(paramm[DATA].onames[t],"wb");
       if (paramc[t].afile == NULL || paramc[t].dfile == NULL)
         { fprintf(stderr,"Cannot open .*.class.*.%d\n",t+1);
+          exit (1);
+        }
+      paramc[t].ranno = Fopen(paramm[RANNO].onames[t],"wb");
+      paramc[t].rdata = Fopen(paramm[RDATA].onames[t],"wb");
+      if (paramc[t].ranno == NULL || paramc[t].rdata == NULL)
+        { fprintf(stderr,"Cannot open .*.rep.*.%d\n",t+1);
           exit (1);
         }
 #endif
@@ -297,15 +303,22 @@ static void prepare_db(Arg *arg, Class_Arg *paramc, Merge_Arg *paramm)
     }
 #endif   // PARALLEL_WRITE
 
-#ifdef WRITE_TRACK
   // Write header info to .anno.1
   { const int64 idx  = 0;
-    const int size = 8;
+    int size;
+
+    // Data track for classifications/seeds
+    size = 8;
     fwrite(&arg->nreads,sizeof(int),1,paramc[0].afile);
     fwrite(&size,sizeof(int),1,paramc[0].afile);
     fwrite(&idx,sizeof(int64),1,paramc[0].afile);
+    
+    // Mask track for repeats
+    size = 0;
+    fwrite(&arg->nreads,sizeof(int),1,paramc[0].ranno);
+    fwrite(&size,sizeof(int),1,paramc[0].ranno);
+    fwrite(&idx,sizeof(int64),1,paramc[0].ranno);
   }
-#endif
 
   return;
 }

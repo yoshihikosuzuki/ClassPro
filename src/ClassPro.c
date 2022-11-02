@@ -70,11 +70,9 @@ static void *kmer_class_thread(void *arg)
   kseq_t     *fxseq = NULL;       // for FASTX input
   DAZZ_DB    *db = NULL;
   DAZZ_READ  *r = NULL;
-#ifdef WRITE_TRACK
-  int64       tidx;               // Index for DAZZ track (afile; .anno file)
+  int64       tidx, ridx;               // Index for DAZZ track (afile; .anno file)
   char       *track = NULL;       // Data for DAZZ track (dfile; .data file)
   char       *crack = NULL;
-#endif
   char        header[MAX_NAME];   // for both FASTX and DB
   DAZZ_STUB  *stub;
   char      **flist = NULL;
@@ -88,11 +86,10 @@ static void *kmer_class_thread(void *arg)
     { db       = data->db;
       rlen_max = db->maxlen;
       seq      = New_Read_Buffer(db);
-#ifdef WRITE_TRACK
       tidx     = 0;
+      ridx     = 0;
       track    = New_Read_Buffer(db);
       crack    = track + Km1;
-#endif
       if (!IS_DAM)
         { stub  = data->stub;
           flist = stub->prolog;
@@ -153,15 +150,11 @@ static void *kmer_class_thread(void *arg)
             kseq_read(fxseq);
           continue;
         }
-      else if (DEBUG_SINGLE_ID < id+1)
-        goto class_exit;
 #endif
 
-#ifdef WRITE_TRACK
       if (IS_DB)
         for (int i = 0; i < Km1; i++)
           track[i] = 0;
-#endif
 
       // 1. Load sequence and header
       { if (IS_DB)
@@ -217,11 +210,9 @@ static void *kmer_class_thread(void *arg)
 #ifdef DEBUG_SINGLE
             fprintf(stderr,"rlen (%d) <= K-1 (%d)\n",rlen,Km1);
             continue;
-#endif
-
+#else
             fprintf(data->cfile,"%s\n%s\n+\n%*s\n",header,seq,rlen,rasgn);
 
-#ifdef WRITE_TRACK
             if (IS_DB)
               { Compress_Read(rlen,track);
                 int t = COMPRESSED_LEN(rlen);
@@ -230,7 +221,6 @@ static void *kmer_class_thread(void *arg)
                 fwrite(&tidx,sizeof(int64),1,data->afile);
               }
 #endif
-
             continue;
           }
       }
@@ -288,15 +278,14 @@ static void *kmer_class_thread(void *arg)
 
       // Find seeds for alignment
       if (FIND_SEED)
-        find_seeds(Q,seq,pasgn,profile,cprofile,hash,sasgn,mintvl,plen,K);
+        find_seeds(Q,seq,pasgn,profile,cprofile,hash,sasgn,mintvl,plen,K,data->ranno,data->rdata,&ridx);
 
 #ifdef DEBUG_SINGLE
-      continue;
+      goto class_exit;
 #endif
 
-      // 7. Output to .class file (and optionally DAZZ track)
+      // 7. Output to .class file and DAZZ track files
       { fprintf(data->cfile,"%s\n%s\n+\n%s\n",header,seq,rasgn);
-#ifdef WRITE_TRACK
         if (IS_DB)
           { for (int i = 0; i < plen; i++)
               crack[i] = (FIND_SEED) ? ctos[sasgn[i]] : ctos[(int)pasgn[i]];
@@ -312,18 +301,17 @@ static void *kmer_class_thread(void *arg)
             tidx += t;
             fwrite(&tidx,sizeof(int64),1,data->afile);
           }
-#endif
       }
     }   // Loop for each read
 
   fclose(data->cfile);
   if (IS_DB)
     { free(seq-1);
-#ifdef WRITE_TRACK
       fclose(data->afile);
       fclose(data->dfile);
       free(track-1);
-#endif
+      fclose(data->ranno);
+      fclose(data->rdata);
     }
   free(profile);
   free(_lctx);
@@ -568,11 +556,8 @@ int main(int argc, char *argv[])
   // Set error model, profile reader, and output file names/pointers for each thread
   { for (int t = 0; t < arg->nthreads; t++)
       { paramc[t].emodel = emodel;
-#ifdef DUP_PROFILE
-        paramc[t].P = (t == 0) ? P : Open_Profiles(arg->fk_root);
-#else
         paramc[t].P = (t == 0) ? P : Clone_Profiles(P);
-#endif
+        // paramc[t].P = (t == 0) ? P : Open_Profiles(arg->fk_root);
         if (paramc[t].P == NULL)
           { fprintf(stderr,"%s: Cannot open %s.prof\n",Prog_Name,arg->fk_root);
             exit (1);
