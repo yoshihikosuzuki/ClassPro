@@ -424,10 +424,10 @@ static void anno_repeat(int *sasgn,
     if (class[i] == 'R' || class[i] == 'E') n_rmer++;
   bool in_R = (n_rmer >= n_rmer_thres) ? true : false;
 
-#ifdef DEBUG_REP
-      fprintf(stderr,"i = %5d, # E/R-mers in W[%d..%d) = %d   %s\n",
-                     0,n_rmer,0,window_size,(in_R)?"*":"");
-#endif
+// #ifdef DEBUG_REP
+//       fprintf(stderr,"i = %5d, # E/R-mers in W[%d..%d) = %d   %s\n",
+//                      0,0,window_size,n_rmer,(in_R)?"*":"");
+// #endif
   
   // NOTE: Do not forget to add Km1 when output `b,e` to DAZZ_TRACK.
   int b = 0, e;
@@ -496,8 +496,9 @@ static void anno_repeat(int *sasgn,
       fprintf(stderr,"R-intvl: [%d .. %d)\n",b,e);
 #endif
     }
-  ridx += (n_rintvl*2*sizeof(int));
-  fwrite(&ridx,sizeof(int64),1,ranno);
+  *ridx += (n_rintvl*2*sizeof(int));
+  // printf("ridx = %lld\n",*ridx);
+  fwrite(ridx,sizeof(int64),1,ranno);
 
 #ifdef DEBUG_REP
   fprintf(stderr,"# of R-intvals = %d\n",n_rintvl);

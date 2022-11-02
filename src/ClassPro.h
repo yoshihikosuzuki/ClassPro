@@ -335,8 +335,9 @@ enum Otype { CLASS, DATA, ANNO, RDATA, RANNO, N_OTYPE };
 typedef struct
   { char *sep;
     char *suf;
-    bool  is_anno;
-    bool  is_bin;
+    bool  is_anno;   // DAZZ_DB data track?
+    // bool  is_mask;   // DAZZ_DB mask track?
+    bool  is_bin;    // binary file?
   } Out_Info;
 
 const Out_Info O_INFO[N_OTYPE]  = { { "/",  ".class",      false, false },
@@ -344,6 +345,12 @@ const Out_Info O_INFO[N_OTYPE]  = { { "/",  ".class",      false, false },
                                     { "/.", ".class.anno", true,  true  },
                                     { "/.", ".rep.data",   false, true  },
                                     { "/.", ".rep.anno",   true,  true  }  };
+
+// const Out_Info O_INFO[N_OTYPE]  = { { "/",  ".class",      false, false, false },
+//                                     { "/.", ".class.data", false, false, true  },
+//                                     { "/.", ".class.anno", true,  false, true  },
+//                                     { "/.", ".rep.data",   false, true,  true  },
+//                                     { "/.", ".rep.anno",   true,  true,  true  }  };
 
 // Arguments for merging intermediate output files (defined for each `Otype`)
 typedef struct
