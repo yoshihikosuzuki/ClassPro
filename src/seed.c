@@ -19,7 +19,7 @@
 #undef TIME_SEED
 
 #define WSIZE 1000
-#define WSIZE_REP 200
+#define WSIZE_REP 1000
 #define MOD 10009
 
 static void kmer_hash(const char *seq,
