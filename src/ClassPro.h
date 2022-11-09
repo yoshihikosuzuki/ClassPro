@@ -10,7 +10,7 @@
 /* --- Debug modes --- */
 // `DEBUG_SINGLE`: Single-read mode. No files are output
 #undef DEBUG_SINGLE
-const int DEBUG_SINGLE_ID = 11;   // Read ID in single-read mode
+const int DEBUG_SINGLE_ID = 26;   // Read ID in single-read mode
 
 /* --- Debug flags --- */
 // `DEBUG`: Several assertions used for sanity check

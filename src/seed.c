@@ -452,7 +452,6 @@ static void anno_repeat(int *sasgn,
     }
   // Up to here `b` and `e` are defined on [0..plen)
 
-#ifndef DEBUG_SINGLE
   // Write to DAZZ_TRACK
   int n_rintvl = 0;
   bool in_R = (sasgn[0] == -10) ? true : false;
@@ -467,8 +466,10 @@ static void anno_repeat(int *sasgn,
       if (in_R)
         { if (sasgn[i] != -10)
             { e = i+K-1;
+#ifndef DEBUG_SINGLE
               fwrite(&b,sizeof(int),1,rdata);
               fwrite(&e,sizeof(int),1,rdata);
+#endif
               n_rintvl++;
               in_R = false;
 #ifdef DEBUG_REP
@@ -479,28 +480,34 @@ static void anno_repeat(int *sasgn,
     }
   if (in_R)
     { e = plen+K-1;
+#ifndef DEBUG_SINGLE
       fwrite(&b,sizeof(int),1,rdata);
       fwrite(&e,sizeof(int),1,rdata);
+#endif
       n_rintvl++;
 #ifdef DEBUG_REP
       fprintf(stderr,"R-intvl: [%d .. %d)\n",b,e);
 #endif
     }
+#ifndef DEBUG_SINGLE
   *ridx += (n_rintvl*2*sizeof(int));
   fwrite(ridx,sizeof(int64),1,ranno);
+#endif
 
   // Annotate non-boundary repeat/errors as -11
   int l = BOUNDARY_UNIQ_LEN;
   while (l < plen && sasgn[l] == -10) l++;
   int r = plen-BOUNDARY_UNIQ_LEN;
-  while (r >= 0 && sasgn[l] == -10) r--;
+  while (r >= 0 && sasgn[r] == -10) r--;
+#ifdef DEBUG_REP
+  fprintf(stderr,"non-boundary interval = [%d, %d]\n",l,r);
+#endif
   for (int i = l; i < r; i++)
     if (sasgn[i] == -10)
       sasgn[i] = -11;
 
 #ifdef DEBUG_REP
   fprintf(stderr,"# of R-intvals = %d\n",n_rintvl);
-#endif
 #endif
 
   return;
