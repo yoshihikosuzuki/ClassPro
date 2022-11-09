@@ -19,7 +19,8 @@
 #undef TIME_SEED
 
 #define WSIZE 1000
-#define WSIZE_REP 1000
+#define WSIZE_REP 200
+#define BOUNDARY_UNIQ_LEN 2000
 #define MOD 10009
 
 static void kmer_hash(const char *seq,
@@ -63,11 +64,11 @@ static int compress_profile(const uint16 *profile,
                             const char    C)
 { int N = 0;
   int b = 0, e = 1;
-  bool prev_valid = (class[0] == C && sasgn[0] != -10) ? true : false;
+  bool prev_valid = (class[0] == C && sasgn[0] > -10) ? true : false;
 
   while (e < plen)
     { if (!prev_valid)
-        { while (e < plen && (class[e] != C || sasgn[e] == -10))
+        { while (e < plen && (class[e] != C || sasgn[e] > -10))
             e++;
           cprofile[N].b = b;
           cprofile[N].e = e;
@@ -90,7 +91,7 @@ static int compress_profile(const uint16 *profile,
           N++;
           b = e;
           e++;
-          prev_valid = (class[b] == C && sasgn[b] != -10) ? true : false;
+          prev_valid = (class[b] == C && sasgn[b] > -10) ? true : false;
         }
     }
 
@@ -419,7 +420,6 @@ static void anno_repeat(int *sasgn,
                         FILE *rdata,
                         int64 *ridx)
 { const int MIN_UNIQ_LEN = K * 2.5;
-  const int BOUNDARY_UNIQ_LEN = 2000;
 
   for (int i = 0; i < plen; i++)
     sasgn[i] = -10;
@@ -427,12 +427,18 @@ static void anno_repeat(int *sasgn,
   // NOTE: Do not forget to add Km1 when output `b,e` to DAZZ_TRACK.
   int b = 0, e;
   bool in_uniq = (is_unique(class[0])) ? true : false;
+  bool has_r = (!in_uniq && class[0] == 'R') ? true : false;
   for (e = 1; e < plen; e++)
     { if (!in_uniq)
         { if (is_unique(class[e]))
-            { b = e;
+            { if (!has_r)   // only E-mers
+                { for (int i = b; i < e; i++)
+                    sasgn[i] = 0;
+                }
+              b = e;
               in_uniq = true;
             }
+          has_r = (class[e] == 'R') ? true : false;
         }
       if (in_uniq)
         { if (!is_unique(class[e]))
@@ -442,6 +448,7 @@ static void anno_repeat(int *sasgn,
                 }
               in_uniq = false;
             }
+          has_r = false;
         }
     }
   if (in_uniq)
