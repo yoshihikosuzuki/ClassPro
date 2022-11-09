@@ -405,67 +405,57 @@ seed_exit:
 }
 
 /* Find repeat intervals on a profile.
-   For each X bp sliding window W, W is repetitive iff more than X * p % k-mers are R-mers.
-   A repeat interval is a union of consective repetitive windows.
+   Unique intervals := consecutive H/D-mers longer than K*2.5 bp.
+   Repeat intervals := [0, plen) - (unique intervals)
 */
+inline static bool is_unique(const char c)
+{ return (c == 'H' || c == 'D');
+}
 static void anno_repeat(int *sasgn,
                         const char *class,
                         const int plen,
-                        const int window_size,
-                        const double p_rmer_thres,
                         const int K,
                         FILE *ranno,
                         FILE *rdata,
                         int64 *ridx)
-{ const int n_rmer_thres = window_size * p_rmer_thres;
-  
-  int n_rmer = 0;
-  for (int i = 0; i < window_size; i++)
-    if (class[i] == 'R' || class[i] == 'E') n_rmer++;
-  bool in_R = (n_rmer >= n_rmer_thres) ? true : false;
+{ const int MIN_UNIQ_LEN = K * 2.5;
+  const int BOUNDARY_UNIQ_LEN = 2000;
 
-// #ifdef DEBUG_REP
-//       fprintf(stderr,"i = %5d, # E/R-mers in W[%d..%d) = %d   %s\n",
-//                      0,0,window_size,n_rmer,(in_R)?"*":"");
-// #endif
-  
+  for (int i = 0; i < plen; i++)
+    sasgn[i] = -10;
+
   // NOTE: Do not forget to add Km1 when output `b,e` to DAZZ_TRACK.
   int b = 0, e;
-  for (int i = 1; i < plen-window_size+1; i++)
-    { if (class[i-1] == 'R' || class[i-1] == 'E') n_rmer--;
-      if (class[i+window_size-1] == 'R' || class[i+window_size-1] == 'E') n_rmer++;
-
-// #ifdef DEBUG_REP
-//       fprintf(stderr,"i = %5d, class[i-1]=%c, class[i+W-1]=%c, # E/R-mers in W[%d..%d) = %d   %s\n",
-//                      i,class[i-1],class[i+window_size-1],i,i+window_size,n_rmer,(in_R)?"*":"");
-// #endif
-
-      if (!in_R)
-        { if (n_rmer >= n_rmer_thres)   // TODO: trim H/D-mers at both sides?
-            { b = i;
-              in_R = true;
+  bool in_uniq = (is_unique(class[0])) ? true : false;
+  for (e = 1; e < plen; e++)
+    { if (!in_uniq)
+        { if (is_unique(class[e]))
+            { b = e;
+              in_uniq = true;
             }
         }
-      if (in_R)
-        { if (n_rmer < n_rmer_thres)
-            { e = i+window_size-1;
-              for (int j = b; j < e; j++)   // TODO: use interval operation?
-                sasgn[j] = -10;
-              in_R = false;
+      if (in_uniq)
+        { if (!is_unique(class[e]))
+            { if (e - b >= MIN_UNIQ_LEN)
+                { for (int i = b; i < e; i++)
+                    sasgn[i] = 0;
+                }
+              in_uniq = false;
             }
         }
     }
-  if (in_R)
-    { e = plen;
-      for (int j = b; j < e; j++)
-        sasgn[j] = -10;
+  if (in_uniq)
+    { if (e - b >= MIN_UNIQ_LEN)
+        { for (int i = b; i < e; i++)
+          sasgn[i] = 0;
+        }
     }
   // Up to here `b` and `e` are defined on [0..plen)
 
 #ifndef DEBUG_SINGLE
   // Write to DAZZ_TRACK
   int n_rintvl = 0;
-  in_R = (sasgn[0] == -10) ? true : false;
+  bool in_R = (sasgn[0] == -10) ? true : false;
   b = K-1;
   for (int i = 1; i < plen; i++)
     { if (!in_R)
@@ -499,6 +489,15 @@ static void anno_repeat(int *sasgn,
   *ridx += (n_rintvl*2*sizeof(int));
   fwrite(ridx,sizeof(int64),1,ranno);
 
+  // Annotate non-boundary repeat/errors as -11
+  int l = BOUNDARY_UNIQ_LEN;
+  while (l < plen && sasgn[l] == -10) l++;
+  int r = plen-BOUNDARY_UNIQ_LEN;
+  while (r >= 0 && sasgn[l] == -10) r--;
+  for (int i = l; i < r; i++)
+    if (sasgn[i] == -10)
+      sasgn[i] = -11;
+
 #ifdef DEBUG_REP
   fprintf(stderr,"# of R-intvals = %d\n",n_rintvl);
 #endif
@@ -526,7 +525,7 @@ static int compress_profile_rep(const uint16 *profile,
 // #endif
 
   while (e < plen)
-    { 
+    {
 // #ifdef DEBUG_COMPRESS_REP
 //       fprintf(stderr,"@ %5d: sasgn = %3d, class = %c\n",e,sasgn[e],class[e]);
 // #endif
@@ -803,7 +802,8 @@ seed_exit_rep:
    NOTE: class[i] in {'E', 'H', 'D', 'R'}
 
    NOTE: Meaning of the value of `sasgn` (for each position (= k-mer)):   // TODO: change to bit operation with macros?
-     -10 = not candidate
+     -11 = non-boundary repeats/errors
+     -10 = boundary repeats1/errors
       -2 = seed fixed elsewhere
       -1 = fixed seed
        0 = candidate
@@ -834,11 +834,8 @@ void find_seeds(kdq_t(hmer_t) *Q,
   timeTo(stderr,false);
 #endif
 
-  for (int i = 0; i < plen; i++)
-    sasgn[i] = 0;
-
   // Annotate highly repetitive regions
-  anno_repeat(sasgn,class,plen,WSIZE,0.8,K,ranno,rdata,ridx);
+  anno_repeat(sasgn,class,plen,K,ranno,rdata,ridx);
 
   // Compute canonical hash for every k-mer
   kmer_hash(seq,hash,plen,K);

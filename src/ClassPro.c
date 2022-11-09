@@ -59,7 +59,7 @@ static void *kmer_class_thread(void *arg)
   int      *sasgn = NULL;
   int      *hash = NULL;
   seg_t   *cprofile = NULL;   // Compressed profile, used in seed selection
-  intvl_t *mintvl = NULL;
+  intvl_t *mintvl = NULL;//, *repseg = NULL;
   Wall_Arg *warg;
   Rel_Arg  *rel_arg;
 #ifdef DO_PMM
@@ -120,6 +120,7 @@ static void *kmer_class_thread(void *arg)
         hash     = Malloc((rlen_max+1)*sizeof(int),"Hash array");
         cprofile = Malloc((rlen_max+1)*sizeof(seg_t),"Compressed profile array");
         mintvl   = Malloc((rlen_max+1)*sizeof(intvl_t),"Mask interval array");
+        // repseg   = Malloc((rlen_max+1)*sizeof(intvl_t),"Repeat segment array");
       }
 
     rel_arg = alloc_rel_arg(rlen_max);
