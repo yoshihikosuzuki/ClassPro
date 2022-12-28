@@ -446,7 +446,7 @@ static Arg *parse_arg(int argc, char *argv[])
       { fprintf(stderr,"    # of sequence files   = %d\n",arg->nfiles);
         fprintf(stderr,"    First (path,root,ext) = (%s, %s, %s)\n",path,root,EXT[idx]);
         fprintf(stderr,"    FASTK outputs' root   = %s\n",arg->fk_root);
-        fprintf(stderr,"    Otput .class file     = %s/%s.class\n",path,arg->out_root);
+        fprintf(stderr,"    Output .class file    = %s/%s.class\n",path,arg->out_root);
       }
 
     // Set full path

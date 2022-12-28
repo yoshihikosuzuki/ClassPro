@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
       { rlen  = db->reads[id].rlen;
         
         if (verbose)
-          fprintf(stderr,"Read %lld (%5d bp):\n",id,rlen);
+          fprintf(stderr,"Read %lld (%5d bp):\n",id+1,rlen);
         
         if (verbose)
           { fprintf(stderr,"  POS = ");
@@ -210,7 +210,6 @@ int main(int argc, char *argv[])
                     exit(1);
                   }
                 int e = p-o;
-                // fprintf(stderr,"b=%d, e=%d, rlen=%d\n",b,e,rlen);
                 fwrite(&b,sizeof(int),1,sdata);
                 fwrite(&e,sizeof(int),1,sdata);
                 nseed++;
