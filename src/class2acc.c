@@ -41,7 +41,7 @@ static char *Usage = "\
     -m<int(0)>   : Minimum Repeat-mer rate of a read to be shown.\n\
     -n<int(100)> : Maximum Repeat-mer rate of a read to be shown.\n\
 \n\
-  -f<int(100)>: Used for real datasets. Ignore every read with an Error-mer rate larger than this value, meaning the assembly is likely to lack some of the k-mers in the read.\n\
+  -f<int(100)>: Used for real datasets. Ignore every read with an Error-mer rate larger than this value. Use this option in the case where the ground-truth assembly is likely to fail to reconstruct some of the k-mers in the read dataset.\n\
   -r<int(0)>   : Used for global accuracy calculation. Reads with a Repeat-mer rate larger than this value are regarded as 'Repeat reads'.\n\
   -w<int> : If specified with a value, instead of each read, accuracy is calculated for each window of the size of this value.\n\
   -p      : Path to .prof file.\n\
@@ -59,16 +59,16 @@ int main(int argc, char *argv[])
   int   THRES_LQ   = -1;      // -e
   int   THRES_R    = 0;       // -r
   int   WINDOW     = -1;      // -w
-  int   THRES_E    = 100;
+  int   THRES_E    = 100;     // -f
   char *prof_root  = NULL;
-  
+
   { int    i, j, k;
     int    flags[128];
     char  *eptr;
     (void) flags;
 
     ARG_INIT("class2acc");
-    
+
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
@@ -244,7 +244,7 @@ int main(int argc, char *argv[])
             }
         }
 
-      if ((double)(rcomp[0])/rtot*100 > THRES_E)   // For real data. FIXME: option. TODO: obviously R-count E-mer rate?
+      if ((double)(rcomp[0])/rtot*100 > THRES_E)
         { id++;
           continue;
         }
@@ -319,7 +319,7 @@ int main(int argc, char *argv[])
   gzclose(fest);
   kseq_destroy(strue);
   gzclose(ftrue);
-  
+
   Catenate(NULL,NULL,NULL,NULL);
   Numbered_Suffix(NULL,0,NULL);
   free(Prog_Name);
