@@ -190,7 +190,7 @@ int main(int argc, char *argv[])
 
         // Seed
         // TODO: Load class without DB? (know clen by anno)
-        clen = COMPRESSED_LEN(rlen); 
+        clen = COMPRESSED_LEN(rlen);
         if (clen > 0)
           { if (fread(cls,1,clen,kdata) != clen)
               { fprintf(stderr,"%s: Cannot load read %lld\n",Prog_Name,id);

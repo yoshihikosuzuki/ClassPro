@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-function
 LIBS = -Igsl/include -Lgsl/lib -lgsl -lgslcblas -lm -lz -lpthread
 
-ALL = ClassPro ClassGS prof2class class2acc class2cns RepDepAnno
+ALL = ClassPro ClassGS prof2class class2acc class2cns RepDepAnno ShowSeeds
 
 GENE_LIBS = libfastk.c libfastk.h gene_core.c gene_core.h DB.c DB.h QV.c QV.h
 GENE_LIBS_C = libfastk.c DB.c QV.c
@@ -35,6 +35,9 @@ class2cns: class2cns.c $(GENE_LIBS)
 
 RepDepAnno: RepDepAnno.c $(GENE_LIBS)
 	$(CC) $(CFLAGS) -o $@ RepDepAnno.c $(GENE_LIBS_C) $(LIBS)
+
+ShowSeeds: ShowSeeds.c $(GENE_LIBS)
+	$(CC) $(CFLAGS) -o $@ ShowSeeds.c $(GENE_LIBS_C) $(LIBS)
 
 clean:
 	rm -rf gsl gsl-2.7 $(ALL)

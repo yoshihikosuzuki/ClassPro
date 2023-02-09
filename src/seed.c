@@ -66,11 +66,13 @@ static int compress_profile(const uint16 *profile,
                             const char    C)
 { int N = 0;
   int b = 0, e = 1;
-  bool prev_valid = (class[0] == C && sasgn[0] > -10) ? true : false;
+  // bool prev_valid = (class[0] == C && sasgn[0] > -10) ? true : false;
+  bool prev_valid = (class[0] == C) ? true : false;   // FIXME: dev mod
 
   while (e < plen)
     { if (!prev_valid)
-        { while (e < plen && (class[e] != C || sasgn[e] <= -10))
+        { // while (e < plen && (class[e] != C || sasgn[e] <= -10))
+          while (e < plen && class[e] != C)   // FIXME: dev mod
             e++;
           cprofile[N].b = b;
           cprofile[N].e = e;
@@ -93,7 +95,8 @@ static int compress_profile(const uint16 *profile,
           N++;
           b = e;
           e++;
-          prev_valid = (class[b] == C && sasgn[b] > -10) ? true : false;
+          // prev_valid = (class[b] == C && sasgn[b] > -10) ? true : false;
+          prev_valid = (class[b] == C) ? true : false;   // FIXME: dev mod
         }
     }
 
@@ -238,7 +241,8 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
 #endif
                         }
                       else
-                        break;
+                        { cprofile[elem.seg_id].nw = elem.cnt;   // TODO: this is ad-hoc. better 2nd round seeding?
+                        }
                     }
                   kdq_size(Q) = 0;
                 }
@@ -246,7 +250,8 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
           while (kdq_size(Q) > 0)
             { elem = kdq_at(Q, kdq_size(Q) - 1);
               if (elem.cnt < now.cnt)
-                { kdq_size(Q)--;
+                { cprofile[elem.seg_id].nw = elem.cnt;   // TODO: this is ad-hoc.
+                  kdq_size(Q)--;
                 }
               else
                 break;
@@ -281,7 +286,7 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
         }
 
 #ifdef DEBUG_QUEUE
-      if (kdq_size(Q) == 0) continue;   // TODO: need this?
+      if (kdq_size(Q) == 0) continue;
       fprintf(stderr,"@ %5d (%c): |Q| = %ld, Q =",i,class[i],kdq_size(Q));
       for (int j = 0; j < (int)kdq_size(Q); j++) {
         fprintf(stderr,"  %d @ seg[%d] (b=%d)",
@@ -297,7 +302,7 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
         if (last_oor)
           { cprofile[first.seg_id].nw = MIN(first.b-last_oor_pos+1,WSIZE);
 #ifdef DEBUG_QUEUE
-        fprintf(stderr,"seg[%d] (cnt=%d, b=%d) nw <- %d (Bounrady OoR (last_oor) @ %d)\n",
+        fprintf(stderr,"seg[%d] (cnt=%d, b=%d) nw <- %d (Boundary OoR (last_oor) @ %d)\n",
                         first.seg_id,first.cnt,first.b,cprofile[first.seg_id].nw,last_oor_pos);
 #endif
           }
@@ -394,37 +399,48 @@ static void _find_seeds(kdq_t(hmer_t) *Q,
                          seg.b,seg.e,seg.cnt,seg.nw);
 #endif
       }
-    for (; i < N; i++)
-      { seg = cprofile[i];
+    while (i < N)
+      {
 #ifdef DEBUG_SELECT
+        seg = cprofile[i];
         fprintf(stderr,"i = %d, seg = (%d, %d), cnt = %d, # = %d\n",
                       i,seg.b,seg.e,seg.cnt,seg.nw);
 #endif
-        if (!is_contained(mintvl,M,seg.b,seg.e))
-          { M = add_intvl(mintvl,M,MAX(0,seg.b-WSIZE),MIN(seg.e+WSIZE,plen));
-            cprofile[i].is_seed = true;
+        int ii;
+        for (ii = i; ii < N && cprofile[i].nw == cprofile[ii].nw; ii++)
+          { if (!is_contained(mintvl,M,cprofile[ii].b,cprofile[ii].e))
+              cprofile[ii].is_seed = true;
+          }
+        for (ii = i; ii < N && cprofile[i].nw == cprofile[ii].nw; ii++)
+          { seg = cprofile[ii];
+            if (seg.is_seed)
+              { M = add_intvl(mintvl,M,MAX(0,seg.b-WSIZE),MIN(seg.e+WSIZE,plen));
+                // cprofile[i].is_seed = true;
+                // TODO: pick up other segments with the same count as well
 
-            // Choose only minimizer(s)
-            int min_hash = MOD;
-            for (int j = seg.b; j < seg.e; j++)
-              min_hash = MIN(hash[j],min_hash);
-            for (int j = seg.b; j < seg.e; j++)
-              if (hash[j] == min_hash)
-                { sasgn[j] = -2;
+                // Choose only minimizer(s)
+                int min_hash = MOD;
+                for (int j = seg.b; j < seg.e; j++)
+                  min_hash = MIN(hash[j],min_hash);
+                for (int j = seg.b; j < seg.e; j++)
+                  if (hash[j] == min_hash)
+                    { sasgn[j] = -2;
 #ifdef DEBUG_SEED
-                  fprintf(stderr,"seed(%c) @ %5d: count = %d, nw = %d\n",
-                                C,j,profile[j],seg.nw);
+                      fprintf(stderr,"seed(%c) @ %5d: count = %d, nw = %d\n",
+                                    C,j,profile[j],seg.nw);
 #endif
-                }
+                    }
 
 #ifdef DEBUG_SELECT
-            fprintf(stderr,"-> Seed [(%d, %d) cnt = %d, nw = %d]\n",
-                          seg.b,seg.e,seg.cnt,seg.nw);
+                fprintf(stderr,"-> Seed [(%d, %d) cnt = %d, nw = %d]\n",
+                              seg.b,seg.e,seg.cnt,seg.nw);
 #endif
 
-            if (M > 0 && mintvl[0].b == 0 && mintvl[0].e == plen)
-              break;
+              }
           }
+        if (M > 0 && mintvl[0].b == 0 && mintvl[0].e == plen)
+          break;
+        i = ii;
       }
   }
 
@@ -463,9 +479,6 @@ seed_exit:
    Unique intervals := consecutive H/D-mers longer than K*2.5 bp.
    Repeat intervals := [0, plen) - (unique intervals)
 */
-// inline static bool is_unique(const char c)
-// { return (c == 'H' || c == 'D');
-// }
 static void anno_repeat(int *sasgn,
                         const char *class,
                         const int plen,
@@ -483,18 +496,10 @@ static void anno_repeat(int *sasgn,
   int b = 0, e;
   bool in_R = (class[0] == 'R') ? true : false;
   int n_normal = (class[0] == 'H' || class[0] == 'D') ? 1 : 0;
-  // bool has_only_e = (!in_uniq && class[0] == 'R') ? true : false;
   for (e = 1; e < plen; e++)
     { if (in_R)
         { if (class[e] != 'R')
-            { /*if (!has_r)   // only E-mers
-                { for (int i = b; i < e; i++)
-                    sasgn[i] = 0;
-#ifdef DEBUG_REP
-                  fprintf(stderr,"[anno_repeat] Recovering [%d..%d) (Only E-mers)\n",b,e);
-#endif
-                }*/
-              b = e;
+            { b = e;
               in_R = false;
               n_normal = (class[e] == 'H' || class[e] == 'D') ? 1 : 0;
             }
@@ -508,22 +513,12 @@ static void anno_repeat(int *sasgn,
                   fprintf(stderr,"[anno_repeat] Recovering [%d..%d) (>MIN_UNIQ_LEN)\n",b,e);
 #endif
                 }
-              // b = e;
               in_R = true;
             }
           else if (class[e] == 'H' || class[e] == 'D')
             n_normal++;
         }
     }
-//   if (in_R)
-//     { if (!has_r)
-//         { for (int i = b; i < e; i++)
-//             sasgn[i] = 0;
-// #ifdef DEBUG_REP
-//           fprintf(stderr,"[anno_repeat] Recovering [%d..%d) (Only E-mers)\n",b,e);
-// #endif
-//         }
-//     }
   if (!in_R)
     { if (n_normal >= MIN_UNIQ_LEN)
         { for (int i = b; i < e; i++)
@@ -577,7 +572,7 @@ static void anno_repeat(int *sasgn,
   fwrite(ridx,sizeof(int64),1,ranno);
 #endif
 
-  // Annotate non-boundary repeat/errors as -11
+  // Annotate non-boundary repeat/errors as -11   // TODO: no need of this anymore?
   int l = BOUNDARY_UNIQ_LEN;
   while (l < plen && sasgn[l] == -10) l++;
   int r = plen-BOUNDARY_UNIQ_LEN;
@@ -722,7 +717,9 @@ static void _find_seeds_rep(kdq_t(hmer_t) *Q,
 #endif
                         }
                       else
-                        break;
+                        { // break;
+                          cprofile[elem.seg_id].nw = MAX(WSIZE_REP-elem.cnt,0);   // TODO: this is very ad-hoc. Need a better way...
+                        }
                     }
                   kdq_size(Q) = 0;
                 }
@@ -730,7 +727,8 @@ static void _find_seeds_rep(kdq_t(hmer_t) *Q,
           while (kdq_size(Q) > 0)
             { elem = kdq_at(Q, kdq_size(Q) - 1);
               if (elem.cnt > now.cnt)
-                { kdq_size(Q)--;
+                { cprofile[elem.seg_id].nw = MAX(WSIZE_REP-elem.cnt,0);   // TODO: this is very ad-hoc. Need a better way...
+                  kdq_size(Q)--;
                 }
               else
                 break;
@@ -781,7 +779,7 @@ static void _find_seeds_rep(kdq_t(hmer_t) *Q,
         if (last_oor)
           { cprofile[first.seg_id].nw = MIN(first.b-last_oor_pos+1,WSIZE_REP);
 #ifdef DEBUG_QUEUE
-        fprintf(stderr,"seg[%d] (cnt=%d, b=%d) nw <- %d (Bounrady OoR (last_oor) @ %d)\n",
+        fprintf(stderr,"seg[%d] (cnt=%d, b=%d) nw <- %d (Boundary OoR (last_oor) @ %d)\n",
                         first.seg_id,first.cnt,first.b,cprofile[first.seg_id].nw,last_oor_pos);
 #endif
           }
@@ -877,37 +875,46 @@ static void _find_seeds_rep(kdq_t(hmer_t) *Q,
                         seg.b,seg.e,seg.cnt,seg.nw);
 #endif
       }
-    for (; i < N; i++)
-      { seg = cprofile[i];
+    while (i < N)
+      {
 #ifdef DEBUG_SELECT_REP
+        seg = cprofile[i];
         fprintf(stderr,"i = %d, seg = (%d, %d), cnt = %d, # = %d\n",
                        i,seg.b,seg.e,seg.cnt,seg.nw);
 #endif
-        if (!is_contained(mintvl,M,seg.b,seg.e))
-          { M = add_intvl(mintvl,M,MAX(0,seg.b-WSIZE_REP),MIN(seg.e+WSIZE_REP,plen));
-            cprofile[i].is_seed = true;
+        int ii;
+        for (ii = i; ii < N && cprofile[i].nw == cprofile[ii].nw; ii++)
+          { if (!is_contained(mintvl,M,cprofile[ii].b,cprofile[ii].e))
+              cprofile[ii].is_seed = true;
+          }
+        for (ii = i; ii < N && cprofile[i].nw == cprofile[ii].nw; ii++)
+          { seg = cprofile[ii];
+            if (seg.is_seed)
+              { M = add_intvl(mintvl,M,MAX(0,seg.b-WSIZE_REP),MIN(seg.e+WSIZE_REP,plen));
+                // cprofile[i].is_seed = true;
 
-            // Choose only minimizer(s)
-            int min_hash = MOD;
-            for (int j = seg.b; j < seg.e; j++)
-              min_hash = MIN(hash[j],min_hash);
-            for (int j = seg.b; j < seg.e; j++)
-              if (hash[j] == min_hash)
-                { sasgn[j] = -3;
+                // Choose only minimizer(s)
+                int min_hash = MOD;
+                for (int j = seg.b; j < seg.e; j++)
+                  min_hash = MIN(hash[j],min_hash);
+                for (int j = seg.b; j < seg.e; j++)
+                  if (hash[j] == min_hash)
+                    { sasgn[j] = -3;
 #ifdef DEBUG_SEED
-                  fprintf(stderr,"seed(R) @ %5d: count = %d, nw = %d\n",
-                                 j,profile[j],seg.nw);
+                      fprintf(stderr,"seed(R) @ %5d: count = %d, nw = %d\n",
+                                    j,profile[j],seg.nw);
 #endif
-                }
+                    }
 
 #ifdef DEBUG_SELECT_REP
-            fprintf(stderr,"-> Seed [(%d, %d) cnt = %d, nw = %d]\n",
-                           seg.b,seg.e,seg.cnt,seg.nw);
+                fprintf(stderr,"-> Seed [(%d, %d) cnt = %d, nw = %d]\n",
+                              seg.b,seg.e,seg.cnt,seg.nw);
 #endif
-
-            if (M > 0 && mintvl[0].b == 0 && mintvl[0].e == plen)
-              break;
+              }
           }
+        if (M > 0 && mintvl[0].b == 0 && mintvl[0].e == plen)
+          break;
+        i = ii;
       }
   }
 
@@ -1009,13 +1016,6 @@ void find_seeds(kdq_t(hmer_t) *Q,
       else
         sasgn[i] = 'E';   // Do not use
     }
-
-// #ifdef DEBUG_SEED
-//   for (int i = 0; i < plen; i++)
-//     if (sasgn[i] != 'E')
-//       fprintf(stderr,"seed(%c) @ %5d: kmer = %.*s, count = %d\n",
-//                      sasgn[i],i,K,seq+i-K+1,profile[i]);
-// #endif
 
 #ifdef DEBUG_ITER
   int n = 0, r = 0;
